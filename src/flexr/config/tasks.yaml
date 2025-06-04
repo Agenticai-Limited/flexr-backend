@@ -1,0 +1,56 @@
+retrieval_task:
+  description: >
+    Retrieve the most relevant documents or snippets from the internal knowledge base
+    that could help answer the user's question: "{query}".
+  expected_output: >
+    A list of the most relevant text excerpts or document references from the knowledge base.
+  agent: information_retriever
+
+answer_generation_task:
+  description: |
+    You will receive a list of most relevant results from the `retrieval_task`. Each element in the list has the following structure:
+    ```json
+    [{
+      "content": "The relevant text excerpt or document snippet",
+      "similarity": 0.85,
+      "metadata": {
+        "page_label": 1,
+        "file_name": "",
+      }
+    },{},...]
+    ```
+
+    Your task is to:
+    1. Examine the list of results from `retrieval_task`.
+    2. If the list is empty, MUST inform the user that no relevant information was found in the knowledge base.
+    3. If the list is NOT empty, combine the "content" from the relevant results to create a helpful, coherent, and concise answer.
+    4. **Crucially, identify ALL unique source `metadata` (specifically `file_name` and `page_label`) from the results.**
+    5. **Combine these unique sources into a single, comma-separated list of citations.** Each citation should be formatted as "file_name - page_label".
+
+
+  expected_output: >
+    A **clear and structured** answer is helpful to users, especially when it includes citations.
+
+    **If relevant information is found**, the output should be structured as:
+    
+    ```
+    [Your comprehensive answer generated from the relevant content.]
+    
+    <details>
+    <summary>Source</summary>
+    Source: [citations]
+    </details>
+    ```
+    
+    **Important Note:**
+    - The `[Your comprehensive answer generated from the relevant content.]` part should contain all the main answer text, without any preceding "Sources:" section or redundant citation lists.
+    - The `<details>` tag should contain ONLY the "Source: [citations]" string, and no extra HTML tags like `<p>` inside it.
+
+    **If NO relevant information is found**, the output MUST ONLY be:
+    
+    ```
+    No relevant information found in the knowledge base.
+    ```
+    
+    **Crucially, do NOT include any `<details>` or `<summary>` tags, nor any "Source:" text if no relevant information is found.**
+  agent: answer_generator

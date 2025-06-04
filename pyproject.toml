@@ -1,0 +1,32 @@
+[project]
+name = "flexr"
+version = "0.1.0"
+description = "flexr using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "boto3>=1.38.25",
+    "crewai[tools]>=0.121.1,<1.0.0",
+    "fastapi>=0.115.12",
+    "langchain-aws>=0.2.24",
+    "langchain-milvus>=0.1.10",
+    "llama-index>=0.12.38",
+    "loguru>=0.7.3",
+    "psycopg2>=2.9.10",
+    "streamlit>=1.45.1",
+    "uvi>=0.5.0",
+]
+
+[project.scripts]
+flexr = "flexr.main:run"
+run_crew = "flexr.main:run"
+train = "flexr.main:train"
+replay = "flexr.main:replay"
+test = "flexr.main:test"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"
