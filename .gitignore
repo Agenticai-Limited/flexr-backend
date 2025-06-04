@@ -21,3 +21,4 @@ src/flexr/main.py
 chat.py
 search.py
 *.pdf
+run.log

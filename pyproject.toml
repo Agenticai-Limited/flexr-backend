@@ -12,7 +12,8 @@ dependencies = [
     "langchain-milvus>=0.1.10",
     "llama-index>=0.12.38",
     "loguru>=0.7.3",
-    "psycopg2>=2.9.10",
+    "psycopg2-binary>=2.9.10",
+    "python-multipart>=0.0.20",
     "streamlit>=1.45.1",
     "uvi>=0.5.0",
 ]
