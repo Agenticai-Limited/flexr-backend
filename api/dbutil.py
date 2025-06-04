@@ -52,7 +52,7 @@ class DBUtil:
             )
 
             # Insert a test user if not exists
-            hashed = bcrypt.hashpw("test".encode("utf-8"), bcrypt.gensalt())
+            hashed = bcrypt.hashpw("ap-southeast-2".encode("utf-8"), bcrypt.gensalt())
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO users (username, password)
