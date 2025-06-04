@@ -18,6 +18,8 @@ class SearchResult(BaseModel):
 
 class MilvusUtil:
 
+    threshold = 0.5
+
     metric_type="IP"
 
     def __init__(self):
@@ -114,7 +116,16 @@ class MilvusUtil:
 
             reranked_results = []
             if rerank_response and hasattr(rerank_response, "results"):
+                filtered_count = 0
                 for result in rerank_response.results:
+                    if result.relevance_score < self.threshold:
+                        filtered_count += 1
+                        logger.debug(
+                            f"Filtered out - Index: {result.index}, "
+                            f"Score: {result.relevance_score:.3f} < threshold {self.threshold}"
+                        )
+                        continue
+
                     if result.index < len(search_results):
                         original_result = search_results[result.index]
                         reranked_result = SearchResult(
@@ -124,10 +135,13 @@ class MilvusUtil:
                         )
                         reranked_results.append(reranked_result)
                         logger.debug(
-                            f"Reranked - Original Index: {result.index}, "
-                            f"Similarity: {result.relevance_score}; "
+                            f"Accepted - Index: {result.index}, "
+                            f"Score: {result.relevance_score:.3f}; "
                             f"Content: {re.sub(r'\s+',' ', original_result.content)}"
                         )
+
+                logger.info(f"Rerank filtering: {filtered_count} results filtered out, "
+                        f"{len(reranked_results)} results accepted")
 
             return reranked_results
 
