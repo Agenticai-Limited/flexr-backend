@@ -24,9 +24,10 @@ class MilvusUtil:
 
     def __init__(self):
         try:
-
+            
             self.embedding_function = BedrockEmbeddings(
-                model_id=os.environ["EMBEDDING_MODEL"]
+                model_id=os.environ["EMBEDDING_MODEL"],
+                region_name=os.environ["AWS_REGION_NAME"],
             )
 
             self.vectorStore = Milvus(

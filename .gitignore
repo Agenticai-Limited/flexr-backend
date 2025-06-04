@@ -22,3 +22,4 @@ chat.py
 search.py
 *.pdf
 run.log
+pid.file

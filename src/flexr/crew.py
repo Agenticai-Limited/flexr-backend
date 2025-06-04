@@ -32,7 +32,7 @@ class Flexr():
     # Learn more about YAML configuration files here:
     # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
     # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
-    
+
     # If you would like to add tools to your agents, you can learn more about it here:
     # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
@@ -54,10 +54,14 @@ class Flexr():
     # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
     def retrieval_task(self) -> Task:
+        search_tool = self.search_knowledgebase
+        search_tool.result_as_answer = True
+        
         return Task(
-            config=self.tasks_config['retrieval_task'], # type: ignore[index]
-            tools=[self.search_knowledgebase],
-            # output_type=List[SearchResult],
+            config=self.tasks_config["retrieval_task"],  # type: ignore[index]
+            tools=[search_tool],
+            max_retries=1,
+            output_type=List[SearchResult],
             # callback=print_output,
         )
 
@@ -81,8 +85,6 @@ class Flexr():
         '''
         logger.debug(f"Searching for: {query}")
         return MilvusUtil().search(query)
-            
-        
 
     @crew
     def crew(self) -> Crew:

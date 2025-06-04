@@ -8,6 +8,7 @@ Ensure you have Python >=3.10 <3.13 installed on your system. This project uses 
 
 **Recommend using conda to avoid python env/venv issues**
 > [Installing Miniconda](https://docs.anaconda.com/miniconda/install/#quick-command-line-install)
+**Note: conda will default install python 3.13, install 3.12 and select it**
 
 
 First, if you haven't already, install uv:
