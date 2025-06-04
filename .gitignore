@@ -20,3 +20,4 @@ local.db
 src/flexr/main.py
 chat.py
 search.py
+*.pdf
