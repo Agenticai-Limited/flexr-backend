@@ -4,8 +4,13 @@ from crewai.tools import tool
 from crewai.agents.agent_builder.base_agent import BaseAgent
 # from src.flexr.utils.milvus_util import MilvusUtil,SearchResult
 from src.flexr.utils.milvus_util import MilvusUtil,SearchResult
-from typing import List
+from typing import List, Any
 from loguru import logger
+import queue
+import json
+from crewai.tasks.task_output import TaskOutput
+from crewai.project import before_kickoff
+from api.event_models import ProgressEvent
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -26,15 +31,20 @@ from loguru import logger
 class Flexr():
     """Flexr crew"""
 
+    @before_kickoff
+    def before_kickoff(self,input):
+        event = ProgressEvent(
+            type="status_update",
+            stage="running",
+            status="Searching Internal Knowledgebase",
+        )
+        self.update_task_progress(event)
+        return input
+        
+
     agents: List[BaseAgent]
     tasks: List[Task]
 
-    # Learn more about YAML configuration files here:
-    # Agents: https://docs.crewai.com/concepts/agents#yaml-configuration-recommended
-    # Tasks: https://docs.crewai.com/concepts/tasks#yaml-configuration-recommended
-
-    # If you would like to add tools to your agents, you can learn more about it here:
-    # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
     def information_retriever(self) -> Agent:
         return Agent(
@@ -49,9 +59,6 @@ class Flexr():
             verbose=True
         )
 
-    # To learn more about structured task outputs,
-    # task dependencies, and task callbacks, check out the documentation:
-    # https://docs.crewai.com/concepts/tasks#overview-of-a-task
     @task
     def retrieval_task(self) -> Task:
         search_tool = self.search_knowledgebase
@@ -62,7 +69,7 @@ class Flexr():
             tools=[search_tool],
             max_retries=1,
             output_type=List[SearchResult],
-            # callback=print_output,
+            callback=self.retrieval_task_callback
         )
 
     @task
@@ -70,8 +77,6 @@ class Flexr():
         return Task(
             config=self.tasks_config['answer_generation_task'], # type: ignore[index]
             context=[self.retrieval_task()],
-            # callback=print_output,
-            # human_input=True,
         )
 
     @tool
@@ -85,17 +90,37 @@ class Flexr():
         '''
         logger.debug(f"Searching for: {query}")
         return MilvusUtil().search(query)
+    
+    def update_task_progress(self, event: ProgressEvent):
+        if self.queue:
+            self.queue.put(event.to_sse_format())
+
+    def retrieval_task_callback(self, output: TaskOutput):
+        done_event = ProgressEvent(
+            type="status_update",
+            stage="running",
+            status="Searching Internal Knowledgebase Done",
+        )
+        self.update_task_progress(done_event)
+
+        start_next_event = ProgressEvent(
+            type="status_update",
+            stage="running",
+            status="Generating Answer",
+        )
+        self.update_task_progress(start_next_event)
 
     @crew
-    def crew(self) -> Crew:
+    def crew(self, task_id: str, q: queue.Queue) -> Crew:
         """Creates the Flexr crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
+        self.task_id = task_id
+        self.queue = q
+
+        # self.retrieval_task().callback = lambda output: self.update_task_progress(output, retrieval_task_data)
 
         return Crew(
             agents=self.agents, # Automatically created by the @agent decorator
             tasks=self.tasks, # Automatically created by the @task decorator
             process=Process.sequential,
             verbose=True,
-            # process=Process.hierarchical, # In case you wanna use that instead https://docs.crewai.com/how-to/Hierarchical/
         )

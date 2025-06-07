@@ -37,7 +37,7 @@ answer_generation_task:
     Find more information in: [Document Name] (pp. x, y, z)
     </details>
 
-    **When SearchResult list IS empty, output EXACTLY this text with no additional formatting:**
+    **When SearchResult list IS empty, output EXACTLY this text ONLY with NO ADDITIONAL TEXT:**
 
     No relevant information found in the knowledge base.
 
