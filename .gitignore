@@ -23,3 +23,4 @@ search.py
 *.pdf
 run.log
 pid.file
+db_config.ini

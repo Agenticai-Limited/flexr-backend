@@ -2,8 +2,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai.tools import tool
 from crewai.agents.agent_builder.base_agent import BaseAgent
-# from src.flexr.utils.milvus_util import MilvusUtil,SearchResult
-from src.flexr.utils.milvus_util import MilvusUtil,SearchResult
+from src.flexr.utils.milvus_util import MilvusUtil,SearchResults
 from typing import List, Any
 from loguru import logger
 import queue
@@ -73,7 +72,7 @@ class Flexr():
             config=self.tasks_config["retrieval_task"],  # type: ignore[index]
             tools=[search_tool],
             max_retries=1,
-            output_type=List[SearchResult],
+            output_pydantic=SearchResults,
             callback=self.retrieval_task_callback
         )
 
@@ -85,16 +84,17 @@ class Flexr():
         )
 
     @tool
-    def search_knowledgebase(query: str) -> List[SearchResult] :
+    def search_knowledgebase(query: str) -> str :
         '''
         Search the query, retrieving the most relevant text excerpts or document references from the knowledge base
         Args:
             query (str): The original question asked by the user, do not modify it
         Returns:
-            List[SearchResult]: The most relevant document references from the knowledge base, with content,score and metadata
+            str: A JSON string representing the search results, including content, score, and metadata.
         '''
         logger.debug(f"Searching for: {query}")
-        return MilvusUtil().search(query)
+        search_results = MilvusUtil().search(query)
+        return search_results.model_dump_json(indent=2)
     
     def update_task_progress(self, event: ProgressEvent):
         if self.queue:
@@ -119,7 +119,7 @@ class Flexr():
     
     def record_no_result_query(self, output: TaskOutput):
         if not os.environ.get("APP_ENV") == "dev":
-            if output.raw == '[]':
+            if len(output.pydantic.results) == 0:
                 PGDBUtil().save_no_result_query(NoResultLog(query=self.input["query"], username=self.username, task_id=self.task_id))
 
     @crew

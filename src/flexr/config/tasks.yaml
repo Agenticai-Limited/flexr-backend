@@ -3,15 +3,18 @@ retrieval_task:
     Retrieve the most relevant documents or snippets from the internal knowledge base
     that could help answer the user's question: "{query}".
   expected_output: >
-    A list of the most relevant text excerpts or document references from the knowledge base.
+    A Pydantic SearchResults object, containing a 'results' field which is a list
+    of SearchResult objects. Each SearchResult must include 'content', 'similarity',
+    and 'metadata' fields.
   agent: information_retriever
 
 answer_generation_task:
   description: |
-    You will receive a list of SearchResult objects from the `retrieval_task`. Each SearchResult object contains:
-    - content: str (relevant text excerpt)
-    - similarity: float (relevance score)
-    - metadata: dict (file_name, page_label, pk)
+    You will receive a Pydantic SearchResults object with a single 'results' key from the `retrieval_task`.   
+    Its value is a **list of search result dictionaries**, each result dictionary contains:
+    - **content**: (string) Relevant text excerpt.
+    - **similarity**: (float) Relevance score.
+    - **metadata**: (dictionary) Includes 'file_name', 'page_label', and 'pk'.
 
     **IMPORTANT - Content Filtering:**
     The content field contains document metadata that you MUST filter out:
@@ -21,14 +24,14 @@ answer_generation_task:
     
     **Extract ONLY the substantive information** that directly answers the user's question - {query}.
 
-    **Your task:**
-    1. **If the SearchResult list is empty** → Return EXACTLY: "No relevant information found in the knowledge base." (Nothing else)
-    2. **If SearchResult list has items** → Create structured answer + add sources section
-    3. Use **bold text**, bullet points, and clear formatting
-    4. Group citations by document: "Document.pdf (pp. x, y, z)"
+# **Your task:**
+# 1. **If the results list in SearchResults is empty** → Return EXACTLY: "No relevant information found in the knowledge base."
+# 2. **If results list in SearchResults has items** → Create structured answer + add sources section
+# 3. Use **bold text**, bullet points, and clear formatting
+# 4. Group citations by document: "Document.pdf (pp. x, y, z)"
 
   expected_output: |
-    **When SearchResult list is NOT empty, format as:**
+    **When results list in SearchResults is NOT empty, format as:**
 
     [Your well-formatted answer with filtered content - no timestamps/headers]
 
@@ -37,7 +40,7 @@ answer_generation_task:
     Find more information in: [Document Name] (pp. x, y, z)
     </details>
 
-    **When SearchResult list IS empty, output EXACTLY this text ONLY with NO ADDITIONAL TEXT:**
+    **When results list in SearchResults IS empty, output EXACTLY this text ONLY with NO ADDITIONAL TEXT:**
 
     No relevant information found in the knowledge base.
 

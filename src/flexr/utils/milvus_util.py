@@ -15,6 +15,10 @@ class SearchResult(BaseModel):
     similarity: float
     metadata: dict
 
+class SearchResults(BaseModel):
+    results: List[SearchResult]
+
+
 
 class MilvusUtil:
 
@@ -68,7 +72,7 @@ class MilvusUtil:
 
         return self.vectorStore.add_documents(documents)
 
-    def search(self, query: str, top_k: int = 5) -> List[SearchResult]:
+    def search(self, query: str, top_k: int = 5) -> SearchResults:
         logger.debug(
             f"{'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}"
         )
@@ -86,7 +90,7 @@ class MilvusUtil:
             )
         logger.debug(f"{'*' *80 }")
         reranked = self.rerank(query, search_results)
-        return reranked
+        return SearchResults(results=reranked)
 
     def test_samilarity(self, query, result):
         from numpy import dot
