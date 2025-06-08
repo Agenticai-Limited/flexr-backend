@@ -11,6 +11,9 @@ import json
 from crewai.tasks.task_output import TaskOutput
 from crewai.project import before_kickoff
 from api.event_models import ProgressEvent
+from api.pg_dbutil import PGDBUtil, NoResultLog
+import os
+
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -33,6 +36,7 @@ class Flexr():
 
     @before_kickoff
     def before_kickoff(self,input):
+        self.input = input
         event = ProgressEvent(
             type="status_update",
             stage="running",
@@ -49,6 +53,7 @@ class Flexr():
     def information_retriever(self) -> Agent:
         return Agent(
             config=self.agents_config['information_retriever'], # type: ignore[index]
+            max_iter=1,
             verbose=True
         )
 
@@ -103,19 +108,26 @@ class Flexr():
         )
         self.update_task_progress(done_event)
 
+        self.record_no_result_query(output)
+        
         start_next_event = ProgressEvent(
             type="status_update",
             stage="running",
             status="Generating Answer",
         )
         self.update_task_progress(start_next_event)
+    
+    def record_no_result_query(self, output: TaskOutput):
+        if not os.environ.get("APP_ENV") == "dev":
+            if output.raw == '[]':
+                PGDBUtil().save_no_result_query(NoResultLog(query=self.input["query"], username=self.username, task_id=self.task_id))
 
     @crew
-    def crew(self, task_id: str, q: queue.Queue) -> Crew:
+    def crew(self, task_id: str, q: queue.Queue, username: str) -> Crew:
         """Creates the Flexr crew"""
         self.task_id = task_id
         self.queue = q
-
+        self.username = username
         # self.retrieval_task().callback = lambda output: self.update_task_progress(output, retrieval_task_data)
 
         return Crew(

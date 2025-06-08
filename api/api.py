@@ -11,7 +11,7 @@ from .auth import authenticate_user, LoginRequest
 from typing import Dict, Optional
 import tempfile
 from loguru import logger
-from .db_factory import DBFactory
+from .pg_dbutil import PGDBUtil
 from .task_manager import task_manager
 from crewai.tasks.task_output import TaskOutput
 from .event_models import ProgressEvent
@@ -60,7 +60,7 @@ def crew_runner(task_id: str, inputs: dict):
         send_event(start_event)
         
         flexr_crew_instance = Flexr()
-        crew = flexr_crew_instance.crew(task_id=task_id, q=queue)
+        crew = flexr_crew_instance.crew(task_id=task_id, q=queue, username='test') #TODO use username from request
         
         result = crew.kickoff(inputs)
         
@@ -74,7 +74,7 @@ def crew_runner(task_id: str, inputs: dict):
         send_event(end_event)
 
     except Exception as e:
-        logger.error(f"Crew execution for task_id {task_id} failed: {e}")
+        logger.exception(f"Crew execution for task_id {task_id} failed")
         error_event = ProgressEvent(
             type="error",
             stage="end",

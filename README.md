@@ -27,7 +27,7 @@ uv sync
 ```
 cp .env.example .env
 ```
-- config databse by declare `USE_LOCAL_DB`, then decide to use sqlite or postgresql, if use postgresql, you need to init database by running 
+- config databse by editing `db_config.ini`, you need to init database by running 
 ```
 psql -h $HOST -p $PORT -U $USER -f docs/sql/pg_init.sql
 ```

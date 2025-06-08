@@ -7,7 +7,13 @@ from fastapi import HTTPException
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
 from contextlib import contextmanager
+from dataclasses import dataclass
 
+@dataclass
+class NoResultLog:
+    query: str
+    username: str
+    task_id: str
 
 class PGDBUtil:
     _pool = None
@@ -90,7 +96,7 @@ class PGDBUtil:
                 )
 
                 # Insert test user if not exists
-                hashed = bcrypt.hashpw("test".encode("utf-8"), bcrypt.gensalt())
+                hashed = bcrypt.hashpw("ap-southeast-2".encode("utf-8"), bcrypt.gensalt())
                 cursor.execute(
                     """
                     INSERT INTO users (username, password)
@@ -125,11 +131,17 @@ class PGDBUtil:
                 if result and bcrypt.checkpw(
                     password.encode("utf-8"), result[0].encode("utf-8")
                 ):
+                   
                     is_success = True
+                else:
+                    exception_msg = "Invalid username or password"
+
         except Exception as e:
             logger.error(f"Error authenticating user: {e}")
             exception_msg = str(e)
-        return is_success, exception_msg
+        finally:
+            conn.close()
+        return {"is_success": is_success, "message": exception_msg}
 
     @staticmethod
     def save_feedback(feedback):
@@ -207,4 +219,48 @@ class PGDBUtil:
                 )
         except Exception as e:
             logger.error(f"Error saving no match query: {e}")
+            raise e
+
+    @staticmethod
+    def init_no_result_logs_table():
+        """Initialize no_result_logs table if it doesn't exist"""
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS no_result_logs (
+                        id SERIAL PRIMARY KEY,
+                        query TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        task_id TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+        except Exception as e:
+            logger.error(f"Error initializing no_result_logs table: {e}")
+            raise e
+
+    @staticmethod
+    def save_no_result_query(no_result_log: NoResultLog):
+        """Save no result query to PostgreSQL database"""
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                PGDBUtil.init_no_result_logs_table()
+
+                cursor.execute(
+                    """
+                    INSERT INTO no_result_logs (query, username, task_id)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (
+                        no_result_log.query,
+                        no_result_log.username,
+                        no_result_log.task_id,
+                    ),
+                )
+        except Exception as e:
+            logger.error(f"Error saving no result query: {e}")
             raise e
