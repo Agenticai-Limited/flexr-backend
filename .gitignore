@@ -24,3 +24,5 @@ search.py
 run.log
 pid.file
 db_config.ini
+benchmark_questions.txt
+benchmark_questions_reranked.txt

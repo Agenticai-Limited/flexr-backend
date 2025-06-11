@@ -34,7 +34,7 @@ class Flexr():
     """Flexr crew"""
 
     @before_kickoff
-    def before_kickoff(self,input):
+    def before_kickoff(self,input: dict):
         self.input = input
         event = ProgressEvent(
             type="status_update",
@@ -42,6 +42,7 @@ class Flexr():
             status="Searching Internal Knowledgebase",
         )
         self.update_task_progress(event)
+        logger.debug(f"Searching for: {input['query']} from {self.task_id}")
         return input
         
 
@@ -92,9 +93,8 @@ class Flexr():
         Returns:
             str: A JSON string representing the search results, including content, score, and metadata.
         '''
-        logger.debug(f"Searching for: {query}")
         search_results = MilvusUtil().search(query)
-        return search_results.model_dump_json(indent=2)
+        return search_results.model_dump_json()
     
     def update_task_progress(self, event: ProgressEvent):
         if self.queue:

@@ -10,7 +10,7 @@ retrieval_task:
 
 answer_generation_task:
   description: |
-    You will receive a Pydantic SearchResults object with a single 'results' key from the `retrieval_task`.   
+    You will receive a Pydantic SearchResults object with a single 'results' key from the `retrieval_task`.
     Its value is a **list of search result dictionaries**, each result dictionary contains:
     - **content**: (string) Relevant text excerpt.
     - **similarity**: (float) Relevance score.
@@ -21,26 +21,35 @@ answer_generation_task:
     - Date/time stamps
     - Document headers and footers
     - Administrative metadata and navigation elements
-    
-    **Extract ONLY the substantive information** that directly answers the user's question - {query}.
 
-# **Your task:**
-# 1. **If the results list in SearchResults is empty** → Return EXACTLY: "No relevant information found in the knowledge base."
-# 2. **If results list in SearchResults has items** → Create structured answer + add sources section
-# 3. Use **bold text**, bullet points, and clear formatting
-# 4. Group citations by document: "Document.pdf (pp. x, y, z)"
+    **Your primary goal is to extract ONLY the substantive information that directly answers the user's question - {query}.**
+
+    **Conditional Output Rules:**
+    1. **If the 'results' list in the SearchResults object is empty:**
+       Your final output MUST be **EXACTLY** this text: "No relevant information found in the knowledge base."
+       Do NOT add any other text, formatting, or explanation.
+
+    2. **If the 'results' list in the SearchResults object has items:**
+       You MUST create a well-formatted answer based on the filtered content.
+       - Use **bold text**, bullet points, and clear formatting to enhance readability.
+       - Include a "Sources" section at the end, grouping citations by document.
+       - Citations should be formatted as: "Document.pdf (pp. x, y, z)".
+       - Ensure your answer contains **no timestamps or headers** from the original content.
 
   expected_output: |
-    **When results list in SearchResults is NOT empty, format as:**
+    # **Example for when results ARE found:**
 
-    [Your well-formatted answer with filtered content - no timestamps/headers]
+    **This is an example of a well-formatted answer.** It uses bold text for emphasis and bullet points for lists:
+    * Item one from the relevant information.
+    * Item two, which directly answers the query.
+    * Any other key details extracted from the content.
 
     <details>
     <summary>Sources</summary>
-    Find more information in: [Document Name] (pp. x, y, z)
+    Find more information in: DocumentA.pdf (pp. 1, 2), DocumentB.pdf (pp. 5, 6, 7)
     </details>
 
-    **When results list in SearchResults IS empty, output EXACTLY this text ONLY with NO ADDITIONAL TEXT:**
+    # **Example for when NO results are found:**
 
     No relevant information found in the knowledge base.
 

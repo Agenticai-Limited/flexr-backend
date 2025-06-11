@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .api import router
-from flexr.config.logging import setup_logging
+from .logging_config import setup_logging
 setup_logging()
+
+from .api import router
 
 app = FastAPI(
     title="Agent API",

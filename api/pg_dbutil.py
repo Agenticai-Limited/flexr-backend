@@ -68,8 +68,6 @@ class PGDBUtil:
                         message_id TEXT NOT NULL,
                         liked BOOLEAN NOT NULL,
                         reason TEXT,
-                        content TEXT,
-                        metadata TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                     """
@@ -110,63 +108,48 @@ class PGDBUtil:
             raise e
 
     @staticmethod
-    def authenticate_user(username: str, password: str) -> tuple[bool, str]:
+    def authenticate_user(username: str, password: str) -> bool:
         """Authenticate user against database
         Returns:
             tuple[bool, str]: A tuple containing the authentication result and any exception message
         """
-        is_success = False
-        exception_msg = None
+    
+        with PGDBUtil.get_connection() as conn:
+            cursor = conn.cursor()
+            PGDBUtil.init_users_table()
 
-        try:
-            with PGDBUtil.get_connection() as conn:
-                cursor = conn.cursor()
-                PGDBUtil.init_users_table()
+            cursor.execute(
+                "SELECT password FROM users WHERE username = %s", (username,)
+            )
+            result = cursor.fetchone()
 
-                cursor.execute(
-                    "SELECT password FROM users WHERE username = %s", (username,)
-                )
-                result = cursor.fetchone()
-
-                if result and bcrypt.checkpw(
-                    password.encode("utf-8"), result[0].encode("utf-8")
-                ):
-                   
-                    is_success = True
-                else:
-                    exception_msg = "Invalid username or password"
-
-        except Exception as e:
-            logger.error(f"Error authenticating user: {e}")
-            exception_msg = str(e)
-        finally:
-            conn.close()
-        return {"is_success": is_success, "message": exception_msg}
+            if result and bcrypt.checkpw(
+                password.encode("utf-8"), result[0].encode("utf-8")
+            ):
+                return True
+            else:
+                return False
+               
+               
 
     @staticmethod
     def save_feedback(feedback):
         """Save feedback data to PostgreSQL database"""
-        try:
-            with PGDBUtil.get_connection() as conn:
-                cursor = conn.cursor()
-                PGDBUtil.init_feedback_table()
+        with PGDBUtil.get_connection() as conn:
+            cursor = conn.cursor()
+            PGDBUtil.init_feedback_table()
 
-                cursor.execute(
-                    """
-                    INSERT INTO feedback (message_id, liked, reason, content, metadata)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (
-                        feedback.messageId,
-                        feedback.liked,
-                        feedback.reason,
-                        feedback.content,
-                        feedback.metadata,
-                    ),
-                )
-        except Exception as e:
-            logger.error(f"Error saving feedback: {e}")
-            raise e
+            cursor.execute(
+                """
+                INSERT INTO feedback (message_id, liked, reason)
+                VALUES (%s, %s, %s)
+                """,
+                (
+                    feedback.messageId,
+                    feedback.liked,
+                    feedback.reason,
+                ),
+            )
 
     @staticmethod
     def init_low_similarity_queries_table():
@@ -256,11 +239,57 @@ class PGDBUtil:
                     VALUES (%s, %s, %s)
                     """,
                     (
-                        no_result_log.query,
+                        no_result_log.query.strip(),
                         no_result_log.username,
                         no_result_log.task_id,
                     ),
                 )
         except Exception as e:
             logger.error(f"Error saving no result query: {e}")
+            raise e
+
+    @staticmethod
+    def init_qa_logs_table():
+        """Initialize qa_logs table if it doesn't exist"""
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS qa_logs (
+                        id SERIAL PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        query TEXT NOT NULL,
+                        response TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+        except Exception as e:
+            logger.error(f"Error initializing qa_logs table: {e}")
+            raise e
+
+    @staticmethod
+    def save_qa_log(task_id: str, query: str, response: str):
+        """Save QA interaction log to PostgreSQL database
+        
+        Args:
+            task_id (str): The unique identifier for the QA task
+            query (str): The user's question
+            response (str): The AI's response
+        """
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                PGDBUtil.init_qa_logs_table()
+
+                cursor.execute(
+                    """
+                    INSERT INTO qa_logs (task_id, query, response)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (task_id, query.strip(), response.strip()),
+                )
+        except Exception as e:
+            logger.error(f"Error saving QA log: {e}")
             raise e

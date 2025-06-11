@@ -18,12 +18,10 @@ from .event_models import ProgressEvent
 
 router = APIRouter(prefix="/api", tags=["AI Crews"])
 
-
 class CrewInput(BaseModel):
     """
     Input model for crew operations
     """
-
     query: str | None = None
 
 class FeedbackRequest(BaseModel):
@@ -34,11 +32,16 @@ class FeedbackRequest(BaseModel):
     messageId: str
     liked: bool
     reason: Optional[str] = None
-    content: str
-    metadata: Optional[str] = None
 
 class TaskCreationResponse(BaseModel):
-    task_id: str
+    message_id: str
+
+class SuccessResponse(BaseModel):
+    status: str = "success"
+
+class ErrorResponse(BaseModel):
+    status: str = "error"
+    message: str
 
 def crew_runner(task_id: str, inputs: dict):
     """Function to run the crew and handle callbacks."""
@@ -65,6 +68,9 @@ def crew_runner(task_id: str, inputs: dict):
         result = crew.kickoff(inputs)
         
         logger.info(f"Crew for task_id {task_id} finished with result: {result}")
+
+        PGDBUtil.save_qa_log(task_id, inputs['query'], result.raw)
+        
         end_event = ProgressEvent(
             type="status_update",
             stage="end",
@@ -102,7 +108,7 @@ async def handle_qa(input_data: CrewInput, background_tasks: BackgroundTasks):
     """
     task_id = task_manager.create_task()
     background_tasks.add_task(crew_runner, task_id, input_data.model_dump())
-    return {"task_id": task_id}
+    return TaskCreationResponse(message_id=task_id)
 
 
 @router.get("/task-progress/{task_id}")
@@ -151,7 +157,12 @@ async def login(request: LoginRequest):
 
     Returns: Authentication result
     """
-    return authenticate_user(request)
+    try:
+        is_authenticated = authenticate_user(request)
+        return SuccessResponse() if is_authenticated else ErrorResponse(message="Invalid username or password")
+    except Exception as e:
+        logger.exception(f"Error authenticating user: {e}")
+        return ErrorResponse(message=str(e))
 
 
 @router.post(
@@ -201,5 +212,9 @@ def log_feedback(feedback: FeedbackRequest):
         dict: Status of the feedback logging operation
     """
     logger.info(f"feedback: {feedback}")
-    db_util = DBFactory.get_db_util()
-    return db_util.save_feedback(feedback)
+    try:
+        PGDBUtil.save_feedback(feedback)
+        return SuccessResponse()
+    except Exception as e:
+        logger.exception(f"Error saving feedback: {e}")
+        return ErrorResponse(message=str(e))

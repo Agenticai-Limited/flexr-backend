@@ -18,8 +18,6 @@ class SearchResult(BaseModel):
 class SearchResults(BaseModel):
     results: List[SearchResult]
 
-
-
 class MilvusUtil:
 
     threshold = 0.5
@@ -48,7 +46,7 @@ class MilvusUtil:
             self.splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=200)
             self._test_connection()
         except Exception as e:
-            logger.error(f"Error initializing MilvusUtil: {e}")
+            logger.exception(f"Error initializing MilvusUtil: {e}")
             traceback.print_exc()
 
     def _test_connection(self):
@@ -57,7 +55,7 @@ class MilvusUtil:
             logger.info("Milvus connection test successful.")
             return True
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
+            logger.exception(f"Connection test failed: {e}")
             return False
 
     def save(self, documents: List[LangchainDocument]):
@@ -72,7 +70,7 @@ class MilvusUtil:
 
         return self.vectorStore.add_documents(documents)
 
-    def search(self, query: str, top_k: int = 5) -> SearchResults:
+    def search(self, query: str, top_k: int = 25) -> SearchResults:
         logger.debug(
             f"{'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}"
         )
@@ -101,7 +99,7 @@ class MilvusUtil:
             norm(query_embedding) * norm(result_embedding)
         )
 
-    def rerank(self, query: str, search_results: List[SearchResult], top_n: int = 4) -> List[SearchResult]:
+    def rerank(self, query: str, search_results: List[SearchResult], top_n: int = 5) -> List[SearchResult]:
         try:
             import cohere
 
@@ -123,13 +121,13 @@ class MilvusUtil:
             if rerank_response and hasattr(rerank_response, "results"):
                 filtered_count = 0
                 for result in rerank_response.results:
-                    if result.relevance_score < self.threshold:
-                        filtered_count += 1
-                        logger.debug(
-                            f"Filtered out - Index: {result.index}, "
-                            f"Score: {result.relevance_score:.3f} < threshold {self.threshold}"
-                        )
-                        continue
+                    # if result.relevance_score < self.threshold:
+                    #     filtered_count += 1
+                    #     logger.debug(
+                    #         f"Filtered out - Index: {result.index}, "
+                    #         f"Score: {result.relevance_score:.3f} < threshold {self.threshold}"
+                    #     )
+                    #     continue
 
                     if result.index < len(search_results):
                         original_result = search_results[result.index]
@@ -145,12 +143,54 @@ class MilvusUtil:
                             f"Content: {re.sub(r'\s+',' ', original_result.content)}"
                         )
 
-                logger.info(f"Rerank filtering: {filtered_count} results filtered out, "
-                        f"{len(reranked_results)} results accepted")
+                # logger.info(f"Rerank filtering: {filtered_count} results filtered out, "
+                #         f"{len(reranked_results)} results accepted")
+
+            return reranked_results
+
+        except Exception as e:
+            logger.exception(f"Error in rerank: {e}")
+            traceback.print_exc()
+            return search_results
+
+    def _test_search(self, query: str, top_k: int = 15):
+        results = self.vectorStore.similarity_search_with_score(query, k=top_k)
+        search_results = []
+        for doc, score in results:
+            search_results.append([score,doc.metadata["page_label"],doc.page_content])
+        return search_results
+    
+    def _test_rerank(self, query: str, results: List[tuple[float, str, str]], top_n: int = 2):
+        try:
+            import cohere
+
+            co = cohere.BedrockClientV2(aws_region="ap-northeast-1")
+
+            if not results:
+                return []
+
+            documents = [result[2] for result in results]
+
+            rerank_response = co.rerank(
+                model="cohere.rerank-v3-5:0",
+                query=query,
+                documents=documents,  
+                top_n=min(top_n, len(documents)),
+            )
+
+            reranked_results = []
+            if rerank_response and hasattr(rerank_response, "results"):
+                for result in rerank_response.results:
+
+                    if result.index < len(results):
+                        original_result = results[result.index]
+                        reranked_result = result.relevance_score, original_result[1], original_result[2]
+                        logger.debug(f"Reranked result: {reranked_result}")
+                        reranked_results.append(reranked_result)
 
             return reranked_results
 
         except Exception as e:
             logger.error(f"Error in rerank: {e}")
             traceback.print_exc()
-            return search_results
+            return []
