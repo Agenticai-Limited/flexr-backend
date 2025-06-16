@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks, Request, Form, HTTPException, status
 from fastapi.responses import StreamingResponse
 import json
 import asyncio
@@ -7,14 +7,16 @@ import queue
 from src.flexr.crew import Flexr
 from fastapi import HTTPException
 from pydantic import BaseModel
-from .auth import authenticate_user, LoginRequest
+from .models import Token, TokenData
+from .security import get_current_user, create_access_token
+from .pg_dbutil import PGDBUtil
 from typing import Dict, Optional
 import tempfile
 from loguru import logger
-from .pg_dbutil import PGDBUtil
 from .task_manager import task_manager
 from crewai.tasks.task_output import TaskOutput
 from .event_models import ProgressEvent
+from datetime import timedelta
 
 router = APIRouter(prefix="/api", tags=["AI Crews"])
 
@@ -38,6 +40,13 @@ class TaskCreationResponse(BaseModel):
 
 class SuccessResponse(BaseModel):
     status: str = "success"
+
+# Define a consistent success response format
+def success_response(data):
+    return {
+        "success": True,
+        "data": data
+    }
 
 class ErrorResponse(BaseModel):
     status: str = "error"
@@ -100,7 +109,7 @@ def crew_runner(task_id: str, inputs: dict):
     description="Handle knowledgebase related questions",
     response_model=TaskCreationResponse
 )
-async def handle_qa(input_data: CrewInput, background_tasks: BackgroundTasks):
+async def handle_qa(input_data: CrewInput, background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_user)):
     """
     QA team processes inquiries asynchronously and returns a task ID.
     - **input_data**: Input data containing questions
@@ -146,24 +155,58 @@ async def get_task_status(task_id: str, request: Request):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-@router.post(
-    "/login", summary="User Authentication", description="Authenticate user credentials"
-)
-async def login(request: LoginRequest):
+@router.get("/me")
+async def get_current_user_info(
+    current_user: TokenData = Depends(get_current_user)
+):
     """
-    Process user login requests
-
-    - **request**: Login request containing username and password
-
-    Returns: Authentication result
+    Get current user information endpoint
+    Returns user info if token is valid, 401 if not
     """
-    try:
-        is_authenticated = authenticate_user(request)
-        return SuccessResponse() if is_authenticated else ErrorResponse(message="Invalid username or password")
-    except Exception as e:
-        logger.exception(f"Error authenticating user: {e}")
-        return ErrorResponse(message=str(e))
+    return success_response({
+        "username": current_user.username,
+        "is_authenticated": True
+    })
 
+@router.post("/logout")
+async def logout(current_user: TokenData = Depends(get_current_user)):
+    """
+    Logout endpoint
+    This endpoint mainly serves as a way for the client to validate their logout action
+    The actual token invalidation should be handled by the client by removing the token
+    """
+    return success_response({
+        "message": "Successfully logged out",
+        "username": current_user.username
+    })
+
+@router.post("/login")
+async def login(
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    """
+    Login endpoint for user authentication
+    """
+    logger.debug(f"Login attempt for user: {username}")
+    
+    is_authenticated = PGDBUtil.authenticate_user(username, password)
+    if not is_authenticated:
+        logger.warning(f"Authentication failed for user: {username}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+    
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": username}, expires_delta=access_token_expires
+    )
+    logger.info(f"User successfully logged in: {username}")
+    return success_response({
+        "access_token": access_token,
+        "token_type": "bearer"
+    })
 
 @router.post(
     "/upload",
@@ -201,7 +244,7 @@ async def upload(file: UploadFile = File(...)):
     summary="feedback crewai response",
     description="feedback crewai response",
 )
-def log_feedback(feedback: FeedbackRequest):
+def log_feedback(feedback: FeedbackRequest,current_user: TokenData = Depends(get_current_user)):
     """
     Log feedback for crewai response and save to SQLite database
 

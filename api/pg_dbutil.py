@@ -8,6 +8,8 @@ import psycopg2
 from psycopg2.pool import SimpleConnectionPool
 from contextlib import contextmanager
 from dataclasses import dataclass
+from .models import NoResultLog
+from .security import verify_password, get_password_hash
 
 @dataclass
 class NoResultLog:
@@ -77,6 +79,25 @@ class PGDBUtil:
             raise e
 
     @staticmethod
+    def add_user(username: str, password: str):
+        """Add a new user to the database"""
+        try:
+            hashed_password = get_password_hash(password)
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, password)
+                    VALUES (%s, %s)
+                    ON CONFLICT (username) DO NOTHING
+                    """,
+                    (username, hashed_password),
+                )
+        except Exception as e:
+            logger.error(f"Error adding user: {e}")
+            raise e
+
+    @staticmethod
     def init_users_table():
         """Initialize users table if it doesn't exist"""
         try:
@@ -94,14 +115,14 @@ class PGDBUtil:
                 )
 
                 # Insert test user if not exists
-                hashed = bcrypt.hashpw("ap-southeast-2".encode("utf-8"), bcrypt.gensalt())
+                hashed_password = get_password_hash("aTt8mZ9x0kzh222")
                 cursor.execute(
                     """
                     INSERT INTO users (username, password)
                     VALUES (%s, %s)
                     ON CONFLICT (username) DO NOTHING
                     """,
-                    ("test", hashed.decode("utf-8")),
+                    ("test", hashed_password),
                 )
         except Exception as e:
             logger.error(f"Error initializing users table: {e}")
@@ -111,9 +132,8 @@ class PGDBUtil:
     def authenticate_user(username: str, password: str) -> bool:
         """Authenticate user against database
         Returns:
-            tuple[bool, str]: A tuple containing the authentication result and any exception message
+            bool: Authentication result
         """
-    
         with PGDBUtil.get_connection() as conn:
             cursor = conn.cursor()
             PGDBUtil.init_users_table()
@@ -123,14 +143,10 @@ class PGDBUtil:
             )
             result = cursor.fetchone()
 
-            if result and bcrypt.checkpw(
-                password.encode("utf-8"), result[0].encode("utf-8")
-            ):
+            if result and verify_password(password, result[0]):
                 return True
             else:
                 return False
-               
-               
 
     @staticmethod
     def save_feedback(feedback):
