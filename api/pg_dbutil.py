@@ -10,11 +10,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from .models import NoResultLog
 from .security import verify_password, get_password_hash
+from src.flexr.utils.models import RerankedResult
+import json
 
 @dataclass
 class NoResultLog:
     query: str
-    username: str
     task_id: str
 
 class PGDBUtil:
@@ -109,6 +110,8 @@ class PGDBUtil:
                         id SERIAL PRIMARY KEY,
                         username TEXT NOT NULL UNIQUE,
                         password TEXT NOT NULL,
+                        is_admin BOOLEAN DEFAULT FALSE,
+                        full_name TEXT DEFAULT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                     """
@@ -168,53 +171,46 @@ class PGDBUtil:
             )
 
     @staticmethod
-    def init_low_similarity_queries_table():
-        """Initialize low_similarity_queries table if it doesn't exist"""
+    def init_low_relevance_results_table():
+        """Initialize low_relevance_results table if it doesn't exist"""
         try:
             with PGDBUtil.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS low_similarity_queries (
+                    CREATE TABLE IF NOT EXISTS init_low_relevance_results (
                         id SERIAL PRIMARY KEY,
-                        query_type INTEGER NOT NULL CHECK (query_type IN (0, 1)),
-                        col::TEXT NOT NULL,
-                        query_content TEXT NOT NULL,
-                        similarity_score FLOAT NOT NULL,
-                        metric_type TEXT NOT NULL,
-                        results TEXT,
+                        query TEXT NOT NULL,
+                        original_index INTEGER NOT NULL,
+                        relevance_score FLOAT NOT NULL,
+                        content TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                     """
                 )
         except Exception as e:
-            logger.error(f"Error initializing low_similarity_queries table: {e}")
+            logger.error(f"Error initializing init_low_relevance_results table: {e}")
             raise e
 
     @staticmethod
-    def save_low_similarity_query(
-        type: str,
-        col: str,
+    def save_low_relevance_result(
         query: str,
-        similarity_score: float,
-        metric_type: str,
-        results: str,
+        origin_index: int,
+        relevance_score: float,
+        content: str,
     ) -> bool:
-        """Save no match query to PostgreSQL database"""
+        """Save low relevance result after rerank to PostgreSQL database"""
         try:
-
-            query_type = 1 if type.lower() == "multimodal" else 0
-
             with PGDBUtil.get_connection() as conn:
                 cursor = conn.cursor()
-                PGDBUtil.init_low_similarity_queries_table()
+                PGDBUtil.init_low_relevance_results_table()
 
                 cursor.execute(
                     """
-                    INSERT INTO low_similarity_queries (query_type, col, query_content, similarity_score, metric_type, results)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO low_relevance_results (query, original_index, relevance_score, content)
+                    VALUES (%s, %s, %s, %s)
                     """,
-                    (query_type, col, query, similarity_score, metric_type, results),
+                    (query, origin_index, relevance_score, content),
                 )
         except Exception as e:
             logger.error(f"Error saving no match query: {e}")
@@ -231,7 +227,6 @@ class PGDBUtil:
                     CREATE TABLE IF NOT EXISTS no_result_logs (
                         id SERIAL PRIMARY KEY,
                         query TEXT NOT NULL,
-                        username TEXT NOT NULL,
                         task_id TEXT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -251,14 +246,10 @@ class PGDBUtil:
 
                 cursor.execute(
                     """
-                    INSERT INTO no_result_logs (query, username, task_id)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO no_result_logs (query, task_id)
+                    VALUES (%s, %s)
                     """,
-                    (
-                        no_result_log.query.strip(),
-                        no_result_log.username,
-                        no_result_log.task_id,
-                    ),
+                    (no_result_log.query, no_result_log.task_id),
                 )
         except Exception as e:
             logger.error(f"Error saving no result query: {e}")
@@ -287,13 +278,7 @@ class PGDBUtil:
 
     @staticmethod
     def save_qa_log(task_id: str, query: str, response: str):
-        """Save QA interaction log to PostgreSQL database
-        
-        Args:
-            task_id (str): The unique identifier for the QA task
-            query (str): The user's question
-            response (str): The AI's response
-        """
+        """Save QA log to PostgreSQL database"""
         try:
             with PGDBUtil.get_connection() as conn:
                 cursor = conn.cursor()
@@ -304,8 +289,60 @@ class PGDBUtil:
                     INSERT INTO qa_logs (task_id, query, response)
                     VALUES (%s, %s, %s)
                     """,
-                    (task_id, query.strip(), response.strip()),
+                    (task_id, query, response),
                 )
         except Exception as e:
             logger.error(f"Error saving QA log: {e}")
             raise e
+
+    @staticmethod
+    def save_reranked_results(task_id: str, results: list[RerankedResult]):
+        """Save reranked results to PostgreSQL database"""
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                PGDBUtil.init_reranked_results_table()
+                
+                for result in results:
+                    cursor.execute(
+                        """
+                        INSERT INTO rerank_results (task_id, original_index, content, similarity, relevance, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            task_id,
+                            result.original_index,
+                            result.content,
+                            result.similarity,
+                            result.relevance,
+                            json.dumps(result.metadata),
+                        ),
+                    )
+        except Exception as e:
+            logger.error(f"Error saving reranked results: {e}")
+            raise e
+
+    @staticmethod
+    def init_reranked_results_table():
+        """Initialize rerank_result table if it doesn't exist"""
+        try:
+            with PGDBUtil.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS rerank_results (
+                        id SERIAL PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        original_index INTEGER NOT NULL,
+                        content TEXT,
+                        similarity FLOAT NOT NULL,
+                        relevance FLOAT NOT NULL,
+                        metadata JSONB,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+        except Exception as e:
+            logger.error(f"Error initializing rerank_result table: {e}")
+            raise e
+    

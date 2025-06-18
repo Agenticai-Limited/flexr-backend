@@ -1,11 +1,12 @@
 import os
 import sys
 import re
+import csv
 
 # Add project root to the Python path to allow running this script directly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from src.flexr.utils.milvus_util import MilvusUtil, SearchResults, SearchResult
+from src.flexr.utils.milvus_util import MilvusUtil, SearchResults, SearchResult, RerankedResults,RerankedResult
 
 common_questions = [
     "Can I change my bank account details?",
@@ -140,6 +141,47 @@ def benchmark_questions():
 
     print("Benchmark finished. Results are in benchmark_questions.txt")
 
+def benchmark_questions_with_rerank():
+    questions = common_questions
+    file_name = "benchmark_questions_reranked.csv"
+    
+    # Remove the file if it exists to start fresh
+    if os.path.exists(file_name):
+        os.remove(file_name)
+
+    milvus_util = MilvusUtil()
+    for question in questions:
+        results: RerankedResults = milvus_util.search(question)
+        if len(results.results) > 0:
+            results.results = results.results[:1]
+            save_to_csv(results.results, question, file_name)
+
+def save_to_csv(results: list[RerankedResult], question: str, file_name: str):
+    """Save the results to a csv file."""
+    
+    header = ["query", "original_index",  "similarity", "relevance", "metadata", "content",]
+    
+    # Check if the file is new to write the header
+    file_exists = os.path.isfile(file_name)
+    
+    with open(file_name, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        
+        if not file_exists:
+            writer.writerow(header)
+            
+        for result in results:
+            writer.writerow([
+                question,
+                result.original_index,
+                result.similarity,
+                result.relevance,
+                str(result.metadata),  # Convert metadata dict to string
+                result.content,
+
+            ])
+
+
 if __name__ == "__main__":
-    benchmark_questions()
+    benchmark_questions_with_rerank()
 

@@ -7,20 +7,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 from langchain_milvus import Milvus
 from pydantic import BaseModel
+from .models import SearchResult, SearchResults, RerankedResult, RerankedResults
 import traceback
 import os 
 
-class SearchResult(BaseModel):
-    content: str
-    similarity: float
-    metadata: dict
-
-class SearchResults(BaseModel):
-    results: List[SearchResult]
 
 class MilvusUtil:
 
-    threshold = 0.5
+    threshold = float(os.environ["RERANK_THRESHOLD"])
 
     metric_type="IP"
 
@@ -39,7 +33,7 @@ class MilvusUtil:
                 auto_id=True,
                 index_params={
                     "index_type": "AUTOINDEX",
-                    "metric_type": self.metric_type,  # L2 for CV, IP for NLP
+                    "metric_type": self.metric_type,  # L2 for CV, IP for NLP # test cosine similarity
                 },
             )
 
@@ -70,7 +64,7 @@ class MilvusUtil:
 
         return self.vectorStore.add_documents(documents)
 
-    def search(self, query: str, top_k: int = 25) -> SearchResults:
+    def search(self, query: str, top_k: int = 25) -> RerankedResults:
         logger.debug(
             f"{'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}"
         )
@@ -84,22 +78,22 @@ class MilvusUtil:
             )
             search_results.append(search_result)
             logger.debug(
-                f"Samiliary: {self.test_samilarity(query,search_result.content)}, Score: {score}; Content: {re.sub(r'\s+', ' ', doc.page_content)}"
+                f"Samiliary score: {score}; Content: {re.sub(r'\s+', ' ', doc.page_content)}"
             )
         logger.debug(f"{'*' *80 }")
         reranked = self.rerank(query, search_results)
-        return SearchResults(results=reranked)
+        return RerankedResults(results=reranked)
 
-    def test_samilarity(self, query, result):
-        from numpy import dot
-        from numpy.linalg import norm
-        query_embedding = self.embedding_function.embed_query(query)
-        result_embedding = self.embedding_function.embed_query(result)
-        return dot(query_embedding, result_embedding) / (
-            norm(query_embedding) * norm(result_embedding)
-        )
+    # def test_samilarity(self, query, result):
+    #     from numpy import dot
+    #     from numpy.linalg import norm
+    #     query_embedding = self.embedding_function.embed_query(query)
+    #     result_embedding = self.embedding_function.embed_query(result)
+    #     return dot(query_embedding, result_embedding) / (
+    #         norm(query_embedding) * norm(result_embedding)
+    #     )
 
-    def rerank(self, query: str, search_results: List[SearchResult], top_n: int = 5) -> List[SearchResult]:
+    def rerank(self, query: str, search_results: List[SearchResult], top_n: int = 5) -> List[RerankedResult]:
         try:
             import cohere
 
@@ -119,28 +113,31 @@ class MilvusUtil:
 
             reranked_results = []
             if rerank_response and hasattr(rerank_response, "results"):
-                filtered_count = 0
                 for result in rerank_response.results:
-                    # if result.relevance_score < self.threshold:
-                    #     filtered_count += 1
-                    #     logger.debug(
-                    #         f"Filtered out - Index: {result.index}, "
-                    #         f"Score: {result.relevance_score:.3f} < threshold {self.threshold}"
-                    #     )
-                    #     continue
+                    if result.relevance_score < self.threshold:
+                        logger.debug(
+                            f"Filtered out - Index: {result.index}, "
+                            f"Relevance: {result.relevance_score:.3f} < threshold {self.threshold}"
+                        )
+                        from api.pg_dbutil import PGDBUtil
+                        PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].content)
+                        continue
 
                     if result.index < len(search_results):
                         original_result = search_results[result.index]
-                        reranked_result = SearchResult(
+                        reranked_result = RerankedResult(
+                            original_index=result.index,
                             content=original_result.content,
-                            similarity=result.relevance_score, 
+                            similarity=original_result.similarity,
+                            relevance=result.relevance_score,
                             metadata=original_result.metadata
                         )
                         reranked_results.append(reranked_result)
                         logger.debug(
-                            f"Accepted - Index: {result.index}, "
-                            f"Score: {result.relevance_score:.3f}; "
-                            f"Content: {re.sub(r'\s+',' ', original_result.content)}"
+                            f"Accepted - Index: {reranked_result.original_index}, "
+                            f"Similarity: {reranked_result.similarity:.3f}, "
+                            f"Relevance: {reranked_result.relevance:.3f}; "
+                            f"Content: {re.sub(r'\s+',' ', reranked_result.content)}"
                         )
 
                 # logger.info(f"Rerank filtering: {filtered_count} results filtered out, "
@@ -151,7 +148,7 @@ class MilvusUtil:
         except Exception as e:
             logger.exception(f"Error in rerank: {e}")
             traceback.print_exc()
-            return search_results
+            return []
 
     def _test_search(self, query: str, top_k: int = 15):
         results = self.vectorStore.similarity_search_with_score(query, k=top_k)

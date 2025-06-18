@@ -2,7 +2,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai.tools import tool
 from crewai.agents.agent_builder.base_agent import BaseAgent
-from src.flexr.utils.milvus_util import MilvusUtil,SearchResults
+from src.flexr.utils.milvus_util import MilvusUtil,RerankedResults
 from typing import List, Any
 from loguru import logger
 import queue
@@ -73,7 +73,7 @@ class Flexr():
             config=self.tasks_config["retrieval_task"],  # type: ignore[index]
             tools=[search_tool],
             max_retries=1,
-            output_pydantic=SearchResults,
+            output_pydantic=RerankedResults,
             callback=self.retrieval_task_callback
         )
 
@@ -91,9 +91,25 @@ class Flexr():
         Args:
             query (str): The original question asked by the user, do not modify it
         Returns:
-            str: A JSON string representing the search results, including content, score, and metadata.
+            str: A JSON string representing the reranked results. The format is as follows:
+             {
+               "results": [
+                 {
+                   "original_index": int,
+                   "content": str,
+                   "similarity": float,
+                   "relevance": float,
+                   "metadata": {
+                     "file_name": str,
+                     "pk": int,
+                     "page_label": str
+                   }
+                 },
+                 ...
+               ]
+             }
         '''
-        search_results = MilvusUtil().search(query)
+        search_results:RerankedResults = MilvusUtil().search(query)
         return search_results.model_dump_json()
     
     def update_task_progress(self, event: ProgressEvent):
@@ -108,7 +124,9 @@ class Flexr():
         )
         self.update_task_progress(done_event)
 
-        self.record_no_result_query(output)
+        logger.debug(f"retrieval_task_callback for{'*'*100}")
+
+        self.record_query_results(output)
         
         start_next_event = ProgressEvent(
             type="status_update",
@@ -117,10 +135,12 @@ class Flexr():
         )
         self.update_task_progress(start_next_event)
     
-    def record_no_result_query(self, output: TaskOutput):
+    def record_query_results(self, output: TaskOutput):
         if not os.environ.get("APP_ENV") == "dev":
             if len(output.pydantic.results) == 0:
-                PGDBUtil().save_no_result_query(NoResultLog(query=self.input["query"], username=self.username, task_id=self.task_id))
+                PGDBUtil().save_no_result_query(NoResultLog(query=self.input["query"], task_id=self.task_id))
+            else:
+                PGDBUtil().save_reranked_results(task_id=self.task_id, results=output.pydantic.results)
 
     @crew
     def crew(self, task_id: str, q: queue.Queue, username: str) -> Crew:

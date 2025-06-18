@@ -10,31 +10,37 @@ retrieval_task:
 
 answer_generation_task:
   description: |
-    You will receive a Pydantic SearchResults object with a single 'results' key from the `retrieval_task`.
-    Its value is a **list of search result dictionaries**, each result dictionary contains:
-    - **content**: (string) Relevant text excerpt.
-    - **similarity**: (float) Relevance score.
-    - **metadata**: (dictionary) Includes 'file_name', 'page_label', and 'pk'.
+    You will receive a Pydantic RerankedResults object from the `retrieval_task`.
+    This RerankedResults object contains a single 'results' key, whose value is a **list of dictionaries**.
+    Each dictionary in the 'results' list contains:
+    - **content**: (string) The relevant text excerpt from the document.
+    - **metadata**: (dictionary) This includes 'file_name' (string) and 'page_label' (string).
 
     **IMPORTANT - Content Filtering:**
-    The content field contains document metadata that you MUST filter out:
+    The 'content' field may contain document metadata that you MUST filter out. This includes:
     - Date/time stamps
     - Document headers and footers
-    - Administrative metadata and navigation elements
+    - Any administrative metadata or navigation elements
 
     **Your primary goal is to extract ONLY the substantive information that directly answers the user's question - {query}.**
 
-    **Conditional Output Rules:**
-    1. **If the 'results' list in the SearchResults object is empty:**
-       Your final output MUST be **EXACTLY** this text: "No relevant information found in the knowledge base."
-       Do NOT add any other text, formatting, or explanation.
+    **Crucial Output Constraints - Read Carefully!**
 
-    2. **If the 'results' list in the SearchResults object has items:**
-       You MUST create a well-formatted answer based on the filtered content.
-       - Use **bold text**, bullet points, and clear formatting to enhance readability.
-       - Include a "Sources" section at the end, grouping citations by document.
-       - Citations should be formatted as: "Document.pdf (pp. x, y, z)".
-       - Ensure your answer contains **no timestamps or headers** from the original content.
+    1. **Scenario: No Relevant Information Found**
+       - **IF** the 'results' list in the RerankResults object is empty or null:
+        - Your final output **MUST BE EXACTLY** this specific phrase: "No relevant information found in the knowledge base."
+        - **STRICT RULE:** **DO NOT** add ANY other words, sentences, formatting, or explanations before or after this exact phrase. This phrase is the *entirety* of your output for this condition. **Think of this as a direct command, not a part of the answer.**
+
+    2. **Scenario: Relevant Information Is Found**
+       - **IF** the 'results' list in the RerankResults object has items:
+        - You MUST create a well-formatted answer based on the filtered 'content'.
+        - **YOUR OUTPUT MUST BE DESIGNED FOR A HUMAN CUSTOMER SERVICE AGENT TO SPEAK OR SEND DIRECTLY TO A CUSTOMER.**
+        - Use **bold text**, bullet points, and clear formatting to enhance readability, tailored for a human customer service agent to use with a customer.
+        - **Sources Section Requirement:** The "Sources" section **MUST BE FULLY AND ONLY** enclosed within a Markdown `<details>` tag.
+        - **STRICT RULE:** **DO NOT** include any standalone "Sources:" heading, "Sources:" label, or similar text *outside* of the `<details>` block. The `<details>` block is the *only* allowed representation for sources.
+        - Citations within the `<details>` block should be formatted as: "Document.pdf (pp. x, y, z)".
+        - Ensure your answer contains **no timestamps or headers** from the original content.
+        - **DO NOT** add any concluding conversational phrases about the answer itself (e.g., "This should provide a clear and concise guide...").
 
   expected_output: |
     # **Example for when results ARE found:**
