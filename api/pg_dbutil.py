@@ -178,7 +178,7 @@ class PGDBUtil:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS init_low_relevance_results (
+                    CREATE TABLE IF NOT EXISTS low_relevance_results (
                         id SERIAL PRIMARY KEY,
                         query TEXT NOT NULL,
                         original_index INTEGER NOT NULL,
@@ -189,7 +189,7 @@ class PGDBUtil:
                     """
                 )
         except Exception as e:
-            logger.error(f"Error initializing init_low_relevance_results table: {e}")
+            logger.error(f"Error initializing low_relevance_results table: {e}")
             raise e
 
     @staticmethod
