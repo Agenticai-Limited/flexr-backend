@@ -4,7 +4,7 @@ import re
 import csv
 
 # Add project root to the Python path to allow running this script directly
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.flexr.utils.milvus_util import MilvusUtil, SearchResults, SearchResult, RerankedResults,RerankedResult
 
@@ -104,7 +104,7 @@ def write_to_file(results: list[tuple[float, str, str]], question: str, file_nam
 
 
 def benchmark_questions():
-    milvus_util = MilvusUtil()
+    milvus_util = MilvusUtil(is_benchmark=True)
     # Overwrite the file at the start of the benchmark
     with open("benchmark_questions.txt", "w") as f:
         f.write("--- Benchmark Results By Milvus ---\n")
@@ -143,13 +143,13 @@ def benchmark_questions():
 
 def benchmark_questions_with_rerank():
     questions = common_questions
-    file_name = "benchmark_questions_reranked.csv"
+    file_name = os.path.join("benchmark", "benchmark_questions_reranked.csv")
     
     # Remove the file if it exists to start fresh
     if os.path.exists(file_name):
         os.remove(file_name)
 
-    milvus_util = MilvusUtil()
+    milvus_util = MilvusUtil(is_benchmark=True)
     for question in questions:
         results: RerankedResults = milvus_util.search(question)
         if len(results.results) > 0:

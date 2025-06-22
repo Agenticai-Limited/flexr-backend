@@ -18,9 +18,9 @@ class MilvusUtil:
 
     metric_type="IP"
 
-    def __init__(self):
+    def __init__(self, is_benchmark: bool = False):
         try:
-            
+            self.is_benchmark = is_benchmark
             self.embedding_function = BedrockEmbeddings(
                 model_id=os.environ["EMBEDDING_MODEL"],
                 region_name=os.environ["AWS_REGION_NAME"],
@@ -114,14 +114,15 @@ class MilvusUtil:
             reranked_results = []
             if rerank_response and hasattr(rerank_response, "results"):
                 for result in rerank_response.results:
-                    if result.relevance_score < self.threshold:
-                        logger.debug(
-                            f"Filtered out - Index: {result.index}, "
-                            f"Relevance: {result.relevance_score:.3f} < threshold {self.threshold}"
-                        )
-                        from api.pg_dbutil import PGDBUtil
-                        PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].content)
-                        continue
+                    if not self.is_benchmark:
+                        if result.relevance_score < self.threshold:
+                            logger.debug(
+                                f"Filtered out - Index: {result.index}, "
+                                f"Relevance: {result.relevance_score:.3f} < threshold {self.threshold}"
+                            )
+                            from api.pg_dbutil import PGDBUtil
+                            PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].content)
+                            continue
 
                     if result.index < len(search_results):
                         original_result = search_results[result.index]
