@@ -153,7 +153,6 @@ def benchmark_questions_with_rerank():
     for question in questions:
         results: RerankedResults = milvus_util.search(question)
         if len(results.results) > 0:
-            results.results = results.results[:1]
             save_to_csv(results.results, question, file_name)
 
 def save_to_csv(results: list[RerankedResult], question: str, file_name: str):
@@ -181,7 +180,20 @@ def save_to_csv(results: list[RerankedResult], question: str, file_name: str):
 
             ])
 
+def test_no_results_with_rerank():
+    milvus_util = MilvusUtil(is_benchmark=True)
+    output_file = os.path.join(os.path.dirname(__file__), "no_results.csv")
+
+    # Remove the file if it exists to start fresh
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
+    for question in common_questions:
+        results = milvus_util.search(question)
+        if results.results[0].relevance < 0.65:
+            with open(output_file, "a") as f:
+                f.write(f"{question},{results.results[0].relevance}\n")
 
 if __name__ == "__main__":
-    benchmark_questions_with_rerank()
+    test_no_results_with_rerank()
 
