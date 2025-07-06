@@ -31,6 +31,7 @@ class MilvusUtil:
                 collection_name=os.environ["milvus_collection_name"],
                 connection_args={"uri": os.environ["milvus_uri"], "token": os.environ["milvus_token"]},
                 auto_id=True,
+                text_field="text_content",
                 index_params={
                     "index_type": "AUTOINDEX",
                     "metric_type": self.metric_type,  # L2 for CV, IP for NLP # test cosine similarity
@@ -68,7 +69,28 @@ class MilvusUtil:
         logger.debug(
             f"{'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}"
         )
-        results = self.vectorStore.similarity_search_with_score(query, k=top_k)
+        try:
+            results = self.vectorStore.similarity_search_with_score(query, k=top_k)
+            results = [
+                (
+                    LangchainDocument(
+                        page_content=doc.page_content, # Keep the original text content
+                        metadata={
+                            "section_name": doc.metadata.get("section_name"),
+                            "page_title": doc.metadata.get("page_title")
+                        }
+                    ),
+                    score
+                )
+                for doc, score in results
+            ]
+
+            logger.debug(f"Search results: {results}")
+        except Exception as e:
+            logger.exception(f"Error in search: {e}")
+            traceback.print_exc()
+            return RerankedResults(results=[])
+        
         search_results = []
         for doc, score in results:
             search_result = SearchResult(

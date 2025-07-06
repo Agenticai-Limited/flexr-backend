@@ -198,7 +198,7 @@ async def login(
             detail="Incorrect username or password",
         )
     
-    access_token_expires = timedelta(minutes=30)
+    access_token_expires = timedelta(minutes=240)
     access_token = create_access_token(
         data={"sub": username}, expires_delta=access_token_expires
     )
