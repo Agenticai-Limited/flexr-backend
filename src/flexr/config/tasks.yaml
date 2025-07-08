@@ -3,77 +3,134 @@ retrieval_task:
     Retrieve the most relevant documents or snippets from the internal knowledge base
     that could help answer the user's question: "{query}".
   expected_output: >
-    A Pydantic SearchResults object, containing a 'results' field which is a list
-    of SearchResult objects. Each SearchResult must include 'content', 'relevance',
+    A Pydantic RerankedResults object, containing a 'results' field which is a list
+    of RerankedResult objects. Each RerankedResult must include 'content', 'relevance',
     and 'metadata' fields.
   agent: information_retriever
 
-answer_generation_task:
+# tasks.yaml (Definitive Final Version)
+structure_content_task:
+  agent: content_structuring_agent
   description: >
-    You are an advanced content synthesizer acting as a highly disciplined reasoning engine for a customer service team. Your primary mission is to transform raw search results into a precise, accurate, and safe-to-use answer for a customer service agent, strictly following the process below. Your adherence to the rules is paramount.
+    Your single objective is to transform the provided `RerankedResults` into a
+    structured JSON `AgentOutput`. Follow these steps with extreme precision.
 
-    context:
-      You will receive a `RerankedResults` object with a list of 'results'. Each result has `content` (text which may include `[IMAGE_INFO]` and `[TABLE_INFO]` tags, both containing a `description` field) and `metadata` (`page_title`, `section_name`). The user's question is: "{query}".
+    **Context:**
+    - The user's original query was: "{query}".
+    - The input you receive is a `RerankedResults` Pydantic object.
 
-    your_reasoning_and_generation_process: >
-      **Step 1: Analyze and Categorize Sources**
-      - First, examine the `metadata` of all retrieved documents.
-      - Identify the **Primary Source**: This is the most general, instructional document that directly answers the user's question "{query}".
-      - Identify any **Supplementary Sources**: These are specific examples, edge cases, or documents for a particular customer.
+    **Step 1: Handle Empty Input**
+    - Check if the input `results` list is empty. If so, your entire output must be this exact JSON object:
+      `{ "plan": null, "final_answer": "No relevant information found in the knowledge base." }`
 
-      **Step 2: Process Content from Primary Source**
-      - Focus **ONLY** on the content of the Primary Source.
-      - Go through the text sequentially, rewriting and formatting it into a clear answer. For any media tag (`[IMAGE_INFO]` or `[TABLE_INFO]`) you encounter, perform this **two-step evaluation**:
-        1.  **Evaluate Relevance:** Read the `description` field inside the tag. Assess if this media is essential for understanding the current instruction. Does it show a critical UI element, provide crucial data, or clarify a complex point?
-        2.  **Place if Relevant:** If, and ONLY IF, the media is deemed relevant and helpful, convert it to its Markdown equivalent and place it directly after the sentence or step it illustrates. If it is not relevant (e.g., decorative, redundant), you must omit it.
+    **Step 2: Analyze and Categorize Sources**
+    - If the `results` list is NOT empty, examine the `metadata` of all documents.
+    - **Crucial Logic:** If there is only ONE document in the `results` list, it is ALWAYS the Primary Source, and there are NO Supplementary Sources. The `supplementary_notes` list in your output plan must be empty.
+    - If there are multiple documents, identify the **Primary Source** (most general) and **Supplementary Sources** (specific cases).
 
-      **Step 3: Process Content from Supplementary Sources**
-      - Now, review the Supplementary Sources. Apply the same **"Evaluate Relevance"** and **"Place if Relevant"** logic from Step 2 to any media within these sources.
-      - Extract ONLY the information that provides *additional context* or *alternative steps* for a specific case.
-      - Format these notes in a highly visible and distinct block, using a blockquote and a clear heading: `> **Special Instructions for: [Page Title of Supplementary Source]**`.
+    **Step 3: Extract and Structure Content**
+    - Create a `StructuredPlan` object.
+    - Process the Primary Source: For each instructional step, create a `Step` object.
+    - Process Supplementary Sources (if they exist): For each supplementary source, create a `SupplementarySource` object and extract `SupplementaryNote` objects.
+    - **Media Handling Rule:** For ANY text you process (primary or supplementary), if a media tag is adjacent, create a `MediaInfo` object for it:
+      - For `[IMAGE_INFO]`: Set `media_type` to 'IMAGE'. Put the `source` URL into the `content` field. Put the `description` into the `description` field.
+      - For `[TABLE_INFO]`: Set `media_type` to 'TABLE'. Put the `markdown_table` string into the `content` field. Put the `summary` (or 'description') into the `description` field.
+    - Collect all unique source `metadata` objects into the `all_sources` field.
 
-      **Step 4: Final Polish and Review**
-      - Read your combined response from the steps above.
-      - **Crucially, you MUST delete any conversational filler, summaries of your own answer, or any concluding remarks.** Your output should be pure, actionable information. For example, remove sentences like "This guide will help..." or "I hope this is clear."
-
-      **Step 5: Final Assembly**
-      - Assemble the polished parts from Step 2 and Step 3.
-      - At the very end, add the standard Sources section, enclosed in a `<details>` tag, listing ALL sources used.
-
-    crucial_output_constraints: >
-      # This is a final checklist. A perfect output follows every rule.
-      1.  **NEVER HALLUCINATE:** Under NO circumstances should you invent `[IMAGE_INFO]`, `[TABLE_INFO]` tags, or create markdown for media that is not explicitly present in the source `content`. This is the most important rule for user trust.
-      2.  **SEPARATE CONTEXTS:** General and specific information MUST be in separate, clearly marked sections as per the process.
-      3.  **NO CHATTER:** The final output must be completely free of conversational filler.
-      4.  **EMPTY RESULTS:** If 'results' is empty, your entire output must be **EXACTLY** `No relevant information found in the knowledge base.`
-      5.  **SOURCES TAG:** The sources section MUST be correctly formatted inside the final `<details>` tag.
-
+    **Step 4: Final Output**
+    - Your final output MUST be a valid JSON object matching the `AgentOutput` schema, containing either a `plan` or a `final_answer`.
   expected_output: >
-    # This is a structural template. Your output MUST follow this structure.
-    # Content inside [brackets] are placeholders for you to fill based on the retrieved information.
+    A single, valid JSON object adhering to the `AgentOutput` Pydantic schema. Your output must be based ONLY on the data present in the input `results`. Do not invent or hallucinate any data.
 
-    [This is the main, synthesized answer, derived **only** from the **Primary Source**. It should directly address the user's query: "{query}". Use clear headings, **bold text**, and lists for readability.]
+    # Example for a comprehensive run with multiple media types and sources:
+    {
+      "plan": {
+        "primary_steps": [
+          {
+            "step_description": "[A summary of an instructional step from the primary source that has an associated image.]",
+            "media_info": { "media_type": "IMAGE", "content": "http://example.com/path-to-image.png", "description": "[The description of the image from the source tag.]" }
+          },
+          {
+            "step_description": "[A summary of another step that has an associated table.]",
+            "media_info": { "media_type": "TABLE", "content": "| Header 1 | Header 2 |\\n|---|---|\\n| Data A | Data B |", "description": "[The summary of the table from the source tag.]" }
+          },
+          {
+            "step_description": "[A summary of a final step that has no associated media.]",
+            "media_info": null
+          }
+        ],
+        "supplementary_notes": [
+          {
+            "source_page": "[Title of a supplementary document]",
+            "notes": [ { "note_description": "[A specific rule or note from the supplementary document.]", "media_info": null } ]
+          }
+        ],
+        "all_sources": [
+            {"page_title": "[Title of Primary Source]", "section_name": "[Section of Primary Source]"},
+            {"page_title": "[Title of a supplementary document]", "section_name": "[Section of supplementary document]"}
+        ]
+      },
+      "final_answer": null
+    }
 
-    ### [Example Sub-heading Based on Primary Source Content]
-    1.  [A step-by-step instruction from the primary source.]
-    2.  [Another step. If you evaluated an image as relevant here, it MUST be rendered in-line, like this:]
-        ![Description of the image from the [IMAGE_INFO] tag](https://placeholder.com/path-to-image.png)
-    3.  [Final step in this section.]
+    # Example for a run with only one source document and no media:
+    {
+      "plan": {
+        "primary_steps": [
+           { "step_description": "[A summary of the only step found in the single document.]", "media_info": null }
+        ],
+        "supplementary_notes": [],
+        "all_sources": [ {"page_title": "[Title of the single source document]", "section_name": "[Section from the document]"} ]
+      },
+      "final_answer": null
+    }
 
-    [If you evaluated a table as relevant in the primary source, it should be rendered in-line as well, like this:]
-    | [Header 1] | [Header 2] |
-    |---|---|
-    | [Data 1]   | [Data 2]   |
+    # Example for a run with empty input results:
+    {
+      "plan": null,
+      "final_answer": "No relevant information found in the knowledge base."
+    }
 
-    > **Special Instructions for: [Page Title of Supplementary Source]**
-    > * [This is a key point extracted **only** from the supplementary source. It could be a customer-specific rule or an edge case.]
-    > * [Another point from the supplementary source. If you evaluated media as relevant here, render it in this block.]
+render_markdown_task:
+  agent: markdown_rendering_agent
+  description: >
+    Your single objective is to render the provided `AgentOutput` JSON into a final,
+    user-facing Markdown document.
+
+    **Step 1: Check for Final Answer**
+    - If the `final_answer` field is not null, your entire output must be the exact string from that field.
+
+    **Step 2: Render the Plan**
+    - If the `plan` field is not null, proceed with rendering.
+    - Render the `primary_steps` list into a clear, numbered list.
+    - **Media Rendering Rule:** For each step, if `media_info` is present, you MUST check the `media_type` field:
+      - If `media_type` is 'IMAGE', render it using the format `![description](content)`.
+      - If `media_type` is 'TABLE', render the raw `content` string directly. The content IS the Markdown table.
+    - Render each `SupplementarySource` object into a blockquote, applying the same media rendering rule to its notes.
+
+    **Step 3: Add Sources Block**
+    - At the end, create the `<details>` block for sources using the `all_sources` list.
+
+    **Step 4: Final Polish**
+    - Your output must be a direct and literal rendering of the JSON plan. Do NOT add any extra headings, summaries, or text OR MARKDOWN (like extra headings) that was not explicitly represented in the input JSON plan. Your only job is to format the given data, not to embellish or add to it.
+  expected_output: >
+    A clean, final Markdown string ready for user display.
+
+    # Structural Example for a successful run with a plan:
+    1.  [A step-by-step instruction.]
+    2.  [Another step with a relevant table rendered in-line.]
+        | Header 1 | Header 2 |
+        |---|---|
+        | Data 1 | Data 2 |
+
+    > **Special Instructions for: [Specific Document Title]**
+    > * [A key point with an image.]
+    >   ![Description of the image](http://example.com/image.png)
 
     <details>
     <summary>Sources</summary>
-    * **Page:** [Page Title of Primary Source] > **Section:** [Section Name of Primary Source]
-    * **Page:** [Page Title of Supplementary Source] > **Section:** [Section Name of Supplementary Source]
+    * **Page:** [Page Title] > **Section:** [Section Name]
     </details>
 
-    
-  agent: answer_generator
+    # Example for a run where a final_answer was passed through:
+    No relevant information found in the knowledge base.

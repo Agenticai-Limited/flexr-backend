@@ -12,6 +12,7 @@ from crewai.project import before_kickoff
 from api.event_models import ProgressEvent
 from api.pg_dbutil import PGDBUtil, NoResultLog
 import os
+from src.flexr.utils.schemas import AgentOutput
 
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
@@ -58,9 +59,18 @@ class Flexr():
         )
 
     @agent
-    def answer_generator(self) -> Agent:
+    def content_structuring_agent(self) -> Agent:
         return Agent(
-            config=self.agents_config['answer_generator'], # type: ignore[index]
+            config=self.agents_config['content_structuring_agent'], # type: ignore[index]
+            llm=os.environ["CONTENT_STRUCTURING_MODEL"],
+            verbose=True
+        )
+    
+    @agent
+    def markdown_rendering_agent(self) -> Agent:
+        return Agent(
+            config=self.agents_config['markdown_rendering_agent'], # type: ignore[index]
+            llm=os.environ["MARKDOWN_RENDERING_MODEL"],
             verbose=True
         )
 
@@ -78,10 +88,19 @@ class Flexr():
         )
 
     @task
-    def answer_generation_task(self) -> Task:
+    def structure_content_task(self) -> Task:
         return Task(
-            config=self.tasks_config['answer_generation_task'], # type: ignore[index]
+            config=self.tasks_config['structure_content_task'], # type: ignore[index]
             context=[self.retrieval_task()],
+            output_pydantic=AgentOutput,
+            callback=self.structure_content_task_callback
+        )
+
+    @task
+    def render_markdown_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['render_markdown_task'], # type: ignore[index]
+            context=[self.structure_content_task()],
         )
 
     @tool
@@ -130,7 +149,22 @@ class Flexr():
         start_next_event = ProgressEvent(
             type="status_update",
             stage="running",
-            status="Generating Answer",
+            status="Summarizing Results",
+        )
+        self.update_task_progress(start_next_event)
+    
+    def structure_content_task_callback(self, output: TaskOutput):
+        done_event = ProgressEvent(
+            type="status_update",
+            stage="running",
+            status="Summarizing Results Done",
+        )
+        self.update_task_progress(done_event)
+        
+        start_next_event = ProgressEvent(
+            type="status_update",
+            stage="running",
+            status="Rendering Answer",
         )
         self.update_task_progress(start_next_event)
     

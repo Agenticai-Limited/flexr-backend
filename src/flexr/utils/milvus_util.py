@@ -203,10 +203,10 @@ class MilvusUtil:
                     if not self.is_benchmark:
                         if result.relevance_score < self.threshold:
                             if log_near_threshold_rejections:
-                                logger.debug(f"The near threshold rejections is: {search_results[result.index].page_content}")
+                                logger.debug(f"The near threshold rejections is: {re.sub(r'\s+',' ', search_results[result.index].page_content)}")
                                 
                                 from api.pg_dbutil import PGDBUtil
-                                PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].page_content)
+                                PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, re.sub(r'\s+',' ', search_results[result.index].page_content))
                                 
                                 log_near_threshold_rejections = False
 
