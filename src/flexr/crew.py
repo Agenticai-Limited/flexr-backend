@@ -97,7 +97,6 @@ class Flexr():
                  {
                    "original_index": int,
                    "content": str,
-                   "similarity": float,
                    "relevance": float,
                    "metadata": {
                      "file_name": str,
@@ -109,7 +108,7 @@ class Flexr():
                ]
              }
         '''
-        search_results:RerankedResults = MilvusUtil().search(query)
+        search_results:RerankedResults = MilvusUtil().search_with_rse(query)
         return search_results.model_dump_json()
     
     def update_task_progress(self, event: ProgressEvent):

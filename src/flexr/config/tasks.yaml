@@ -4,55 +4,76 @@ retrieval_task:
     that could help answer the user's question: "{query}".
   expected_output: >
     A Pydantic SearchResults object, containing a 'results' field which is a list
-    of SearchResult objects. Each SearchResult must include 'content', 'similarity',
+    of SearchResult objects. Each SearchResult must include 'content', 'relevance',
     and 'metadata' fields.
   agent: information_retriever
 
 answer_generation_task:
-  description: |
-    You will receive a Pydantic RerankedResults object from the `retrieval_task`.
-    This RerankedResults object contains a single 'results' key, whose value is a **list of dictionaries**.
-    Each dictionary in the 'results' list contains:
-    - **content**: (string) The relevant text excerpt from the document.
-    - **metadata**: (dictionary) This includes 'page_title' (string) and 'section_name' (string).
+  description: >
+    You are an advanced content synthesizer acting as a highly disciplined reasoning engine for a customer service team. Your primary mission is to transform raw search results into a precise, accurate, and safe-to-use answer for a customer service agent, strictly following the process below. Your adherence to the rules is paramount.
 
-    **Your primary goal is to extract ONLY the substantive information that directly answers the user's question - {query}.**
+    context:
+      You will receive a `RerankedResults` object with a list of 'results'. Each result has `content` (text which may include `[IMAGE_INFO]` and `[TABLE_INFO]` tags, both containing a `description` field) and `metadata` (`page_title`, `section_name`). The user's question is: "{query}".
 
-    **Crucial Output Constraints - Read Carefully!**
+    your_reasoning_and_generation_process: >
+      **Step 1: Analyze and Categorize Sources**
+      - First, examine the `metadata` of all retrieved documents.
+      - Identify the **Primary Source**: This is the most general, instructional document that directly answers the user's question "{query}".
+      - Identify any **Supplementary Sources**: These are specific examples, edge cases, or documents for a particular customer.
 
-    1. **Scenario: No Relevant Information Found**
-       - **IF** the 'results' list in the RerankResults object is empty or null:
-        - Your final output **MUST BE EXACTLY** this specific phrase: "No relevant information found in the knowledge base."
-        - **STRICT RULE:** **DO NOT** add ANY other words, sentences, formatting, or explanations before or after this exact phrase. This phrase is the *entirety* of your output for this condition. **Think of this as a direct command, not a part of the answer.**
+      **Step 2: Process Content from Primary Source**
+      - Focus **ONLY** on the content of the Primary Source.
+      - Go through the text sequentially, rewriting and formatting it into a clear answer. For any media tag (`[IMAGE_INFO]` or `[TABLE_INFO]`) you encounter, perform this **two-step evaluation**:
+        1.  **Evaluate Relevance:** Read the `description` field inside the tag. Assess if this media is essential for understanding the current instruction. Does it show a critical UI element, provide crucial data, or clarify a complex point?
+        2.  **Place if Relevant:** If, and ONLY IF, the media is deemed relevant and helpful, convert it to its Markdown equivalent and place it directly after the sentence or step it illustrates. If it is not relevant (e.g., decorative, redundant), you must omit it.
 
-    2. **Scenario: Relevant Information Is Found**
-       - **IF** the 'results' list in the RerankResults object has items:
-        - You MUST create a well-formatted answer based on the filtered 'content'.
-        - **YOUR OUTPUT MUST BE DESIGNED FOR A HUMAN CUSTOMER SERVICE AGENT TO SPEAK OR SEND DIRECTLY TO A CUSTOMER.**
-        - Use **bold text**, bullet points, and clear formatting to enhance readability, tailored for a human customer service agent to use with a customer.
-        - Image render: MUST Generate a Markdown image link ![alt text](URL) by extracting the 'description' for the alt text and the 'source' for the URL from the provided [IMAGE_INFO] JSON string IF IT EXISTS.
-        - Table render: MUST Generate a Markdown table by extracting the 'markdown_table' from the provided [TABLE_INFO] JSON string IF IT EXISTS and do not miss any rows or columns.      
-        - **Sources Section Requirement:** The "Sources" section **MUST BE FULLY AND ONLY** enclosed within a Markdown `<details>` tag.
-        - **STRICT RULE:** **DO NOT** include any standalone "Sources:" heading, "Sources:" label, or similar text *outside* of the `<details>` block. The `<details>` block is the *only* allowed representation for sources.
-        - Citations within the `<details>` block should be formatted as: "Page:[page_title] Section:(section_name)".
-        - Ensure your answer contains **no timestamps or headers** from the original content.
-        - **DO NOT** add any concluding conversational phrases about the answer itself (e.g., "This should provide a clear and concise guide...").
+      **Step 3: Process Content from Supplementary Sources**
+      - Now, review the Supplementary Sources. Apply the same **"Evaluate Relevance"** and **"Place if Relevant"** logic from Step 2 to any media within these sources.
+      - Extract ONLY the information that provides *additional context* or *alternative steps* for a specific case.
+      - Format these notes in a highly visible and distinct block, using a blockquote and a clear heading: `> **Special Instructions for: [Page Title of Supplementary Source]**`.
 
-  expected_output: |
-    # **Example for when results ARE found:**
+      **Step 4: Final Polish and Review**
+      - Read your combined response from the steps above.
+      - **Crucially, you MUST delete any conversational filler, summaries of your own answer, or any concluding remarks.** Your output should be pure, actionable information. For example, remove sentences like "This guide will help..." or "I hope this is clear."
 
-    **This is an example of a well-formatted answer.** It uses bold text for emphasis and bullet points for lists:
-    * Item one from the relevant information.
-    * Item two, which directly answers the query.
-    * Any other key details extracted from the content.
+      **Step 5: Final Assembly**
+      - Assemble the polished parts from Step 2 and Step 3.
+      - At the very end, add the standard Sources section, enclosed in a `<details>` tag, listing ALL sources used.
+
+    crucial_output_constraints: >
+      # This is a final checklist. A perfect output follows every rule.
+      1.  **NEVER HALLUCINATE:** Under NO circumstances should you invent `[IMAGE_INFO]`, `[TABLE_INFO]` tags, or create markdown for media that is not explicitly present in the source `content`. This is the most important rule for user trust.
+      2.  **SEPARATE CONTEXTS:** General and specific information MUST be in separate, clearly marked sections as per the process.
+      3.  **NO CHATTER:** The final output must be completely free of conversational filler.
+      4.  **EMPTY RESULTS:** If 'results' is empty, your entire output must be **EXACTLY** `No relevant information found in the knowledge base.`
+      5.  **SOURCES TAG:** The sources section MUST be correctly formatted inside the final `<details>` tag.
+
+  expected_output: >
+    # This is a structural template. Your output MUST follow this structure.
+    # Content inside [brackets] are placeholders for you to fill based on the retrieved information.
+
+    [This is the main, synthesized answer, derived **only** from the **Primary Source**. It should directly address the user's query: "{query}". Use clear headings, **bold text**, and lists for readability.]
+
+    ### [Example Sub-heading Based on Primary Source Content]
+    1.  [A step-by-step instruction from the primary source.]
+    2.  [Another step. If you evaluated an image as relevant here, it MUST be rendered in-line, like this:]
+        ![Description of the image from the [IMAGE_INFO] tag](https://placeholder.com/path-to-image.png)
+    3.  [Final step in this section.]
+
+    [If you evaluated a table as relevant in the primary source, it should be rendered in-line as well, like this:]
+    | [Header 1] | [Header 2] |
+    |---|---|
+    | [Data 1]   | [Data 2]   |
+
+    > **Special Instructions for: [Page Title of Supplementary Source]**
+    > * [This is a key point extracted **only** from the supplementary source. It could be a customer-specific rule or an edge case.]
+    > * [Another point from the supplementary source. If you evaluated media as relevant here, render it in this block.]
 
     <details>
     <summary>Sources</summary>
-    Find more information in: Page:[page_title] Section:(section_name)
+    * **Page:** [Page Title of Primary Source] > **Section:** [Section Name of Primary Source]
+    * **Page:** [Page Title of Supplementary Source] > **Section:** [Section Name of Supplementary Source]
     </details>
 
-    # **Example for when NO results are found:**
-
-    No relevant information found in the knowledge base.
-
+    
   agent: answer_generator

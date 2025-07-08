@@ -306,14 +306,13 @@ class PGDBUtil:
                 for result in results:
                     cursor.execute(
                         """
-                        INSERT INTO rerank_results (task_id, original_index, content, similarity, relevance, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO rerank_results (task_id, original_index, content, relevance, metadata)
+                        VALUES (%s, %s, %s, %s, %s)
                         """,
                         (
                             task_id,
                             result.original_index,
                             result.content,
-                            result.similarity,
                             result.relevance,
                             json.dumps(result.metadata),
                         ),
@@ -335,7 +334,6 @@ class PGDBUtil:
                         task_id TEXT NOT NULL,
                         original_index INTEGER NOT NULL,
                         content TEXT,
-                        similarity FLOAT NOT NULL,
                         relevance FLOAT NOT NULL,
                         metadata JSONB,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

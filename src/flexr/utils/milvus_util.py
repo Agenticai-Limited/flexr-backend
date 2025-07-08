@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from .models import SearchResult, SearchResults, RerankedResult, RerankedResults
 import traceback
 import os 
+from collections import defaultdict
 
 
 class MilvusUtil:
@@ -75,14 +76,10 @@ class MilvusUtil:
                 (
                     LangchainDocument(
                         page_content=doc.page_content, # Keep the original text content
-                        metadata={
-                            "section_name": doc.metadata.get("section_name"),
-                            "page_title": doc.metadata.get("page_title")
-                        }
-                    ),
-                    score
+                        metadata=doc.metadata
+                    )
                 )
-                for doc, score in results
+                for doc in results
             ]
 
             logger.debug(f"Search results: {results}")
@@ -91,31 +88,97 @@ class MilvusUtil:
             traceback.print_exc()
             return RerankedResults(results=[])
         
-        search_results = []
-        for doc, score in results:
-            search_result = SearchResult(
-                content=doc.page_content,
-                similarity=score,
-                metadata=doc.metadata
-            )
-            search_results.append(search_result)
-            logger.debug(
-                f"Samiliary score: {score}; Content: {re.sub(r'\s+', ' ', doc.page_content)}"
-            )
-        logger.debug(f"{'*' *80 }")
-        reranked = self.rerank(query, search_results)
+        reranked = self.rerank(query, results)
         return RerankedResults(results=reranked)
 
-    # def test_samilarity(self, query, result):
-    #     from numpy import dot
-    #     from numpy.linalg import norm
-    #     query_embedding = self.embedding_function.embed_query(query)
-    #     result_embedding = self.embedding_function.embed_query(result)
-    #     return dot(query_embedding, result_embedding) / (
-    #         norm(query_embedding) * norm(result_embedding)
-    #     )
+    def search_with_rse(self, query: str) -> RerankedResults:
+        """
+        Retrieve initial chunks, identify relevant OneNote pages, retrieve all chunks
+        for those pages, reconstruct full pages, and then re-rank the full pages.
 
-    def rerank(self, query: str, search_results: List[SearchResult], top_n: int = 5) -> List[RerankedResult]:
+        This method leverages the structure of OneNote pages (identified by page_id
+        and ordered by chunk_id) to provide richer context for LLM generation.
+
+        Args:
+            query (str): The user's query.
+            top_k (int): The number of top full pages to return after re-ranking.
+
+        Returns:
+            RerankedResults: An object containing a list of highly relevant,
+                             re-ranked full OneNote pages.
+        """
+        logger.info(f"Performing RSE {'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}")
+        
+        # 1. Initial Broad Retrieval: Fetch a large number of chunks to cast a wide net.
+        initial_k = 30 
+        initial_candidate_chunks_with_scores = self.vectorStore.similarity_search_with_score(
+            query, k=initial_k
+        )
+
+        # Extract unique page_ids from the initial candidate chunks
+        unique_candidate_page_ids = list(set(
+            doc.metadata.get("page_id")
+            for doc, _ in initial_candidate_chunks_with_scores
+            if doc.metadata and doc.metadata.get("page_id")
+        ))
+        
+        if not unique_candidate_page_ids:
+            logger.warning(f"No unique OneNote page IDs found in initial broad retrieval for query: '{query}'. Returning empty results.")
+            return RerankedResults(results=[])
+
+        logger.info(f"Identified {len(unique_candidate_page_ids)} unique OneNote pages as candidates.")
+
+        # 2. Retrieve All Chunks for Identified Pages in a Single Query
+        formatted_page_ids = [f'"{pid}"' for pid in unique_candidate_page_ids]
+        filter_expr = f"page_id in [{','.join(formatted_page_ids)}]"
+
+        raw_results = self.vectorStore.client.query(
+            collection_name=self.vectorStore.collection_name,
+            filter=filter_expr,
+            output_fields=["chunk_id", "page_id", "text_content", "section_name", "page_title"],  # Get all fields
+            limit=1000  # Assuming no single page has more than 10,000 chunks
+        )
+        
+        if not raw_results:
+            logger.warning(f"No chunks found for any identified candidate pages. Returning empty results.")
+            return RerankedResults(results=[])
+
+        # 3. Reconstruct Full OneNote Pages (RSE Core Logic)
+        page_content_map = defaultdict(list)
+        page_metadata_map = {}  # Store metadata of the first chunk per page_id
+
+        for doc in raw_results:
+            page_id = doc.pop("page_id")
+            chunk_id = doc.pop("chunk_id")
+            text_content = doc.pop("text_content")
+
+            # Store (chunk_id, page_content) tuples for sorting
+            page_content_map[page_id].append((chunk_id, text_content))
+            if page_id not in page_metadata_map:
+                page_metadata_map[page_id] = doc
+
+        reconstructed_pages: List[LangchainDocument] = []
+        for page_id, chunks_data in page_content_map.items():
+            # Sort chunks by their `chunk_id` to guarantee the original page order.
+            sorted_chunks_data = sorted(chunks_data, key=lambda x: x[0])  # x[0] is chunk_id
+            full_page_content = " ".join([content for _, content in sorted_chunks_data])
+            page_metadata = page_metadata_map.get(page_id, {})
+            
+            reconstructed_pages.append(
+                LangchainDocument(
+                    page_content=full_page_content,
+                    metadata=page_metadata
+                )
+            )
+
+        logger.info(f"Successfully reconstructed {len(reconstructed_pages)} full OneNote pages.")
+
+        # 4. Re-rank the Reconstructed Full Pages
+        reranked_final_pages = self.rerank(query, reconstructed_pages)
+        logger.info(f"RSE search completed. Returned {len(reranked_final_pages)} re-ranked full OneNote pages.")
+        return RerankedResults(results=reranked_final_pages)
+
+    def rerank(self, query: str, search_results: List[LangchainDocument], top_n: int = 5) -> List[RerankedResult]:
         try:
             import cohere
 
@@ -124,7 +187,7 @@ class MilvusUtil:
             if not search_results:
                 return []
 
-            documents = [result.content for result in search_results]
+            documents = [result.page_content for result in search_results]
 
             rerank_response = co.rerank(
                 model="cohere.rerank-v3-5:0",
@@ -134,37 +197,43 @@ class MilvusUtil:
             )
 
             reranked_results = []
+            log_near_threshold_rejections = True
             if rerank_response and hasattr(rerank_response, "results"):
                 for result in rerank_response.results:
                     if not self.is_benchmark:
                         if result.relevance_score < self.threshold:
+                            if log_near_threshold_rejections:
+                                logger.debug(f"The near threshold rejections is: {search_results[result.index].page_content}")
+                                
+                                from api.pg_dbutil import PGDBUtil
+                                PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].page_content)
+                                
+                                log_near_threshold_rejections = False
+
                             logger.debug(
                                 f"Filtered out - Index: {result.index}, "
                                 f"Relevance: {result.relevance_score:.3f} < threshold {self.threshold}"
                             )
-                            from api.pg_dbutil import PGDBUtil
-                            PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, search_results[result.index].content)
+                            
                             continue
 
                     if result.index < len(search_results):
                         original_result = search_results[result.index]
                         reranked_result = RerankedResult(
                             original_index=result.index,
-                            content=original_result.content,
-                            similarity=original_result.similarity,
+                            content=original_result.page_content,
                             relevance=result.relevance_score,
                             metadata=original_result.metadata
                         )
                         reranked_results.append(reranked_result)
                         logger.debug(
                             f"Accepted - Index: {reranked_result.original_index}, "
-                            f"Similarity: {reranked_result.similarity:.3f}, "
                             f"Relevance: {reranked_result.relevance:.3f}; "
                             f"Content: {re.sub(r'\s+',' ', reranked_result.content)}"
                         )
 
-                # logger.info(f"Rerank filtering: {filtered_count} results filtered out, "
-                #         f"{len(reranked_results)} results accepted")
+                logger.debug(f"Rerank filtering: {len(search_results) - len(reranked_results)} results filtered out, "
+                        f"{len(reranked_results)} results accepted")
 
             return reranked_results
 
