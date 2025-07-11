@@ -132,5 +132,5 @@ render_markdown_task:
     * **Page:** [Page Title] > **Section:** [Section Name]
     </details>
 
-    # Example for a run where a final_answer was passed through:
+    # Example for a run where a final_answer was passed through without any formatting:
     No relevant information found in the knowledge base.
