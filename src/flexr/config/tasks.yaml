@@ -105,7 +105,7 @@ render_markdown_task:
     - Render the `primary_steps` list into a clear, numbered list.
     - **Media Rendering Rule:** For each step, if `media_info` is present, you MUST check the `media_type` field:
       - If `media_type` is 'IMAGE', render it using the format `![description](content)`.
-      - If `media_type` is 'TABLE', render the raw `content` string directly. The content IS the Markdown table.
+      - If `media_type` is 'TABLE', render the raw `content` string directly. Valid the content IS the Markdown table.
     - Render each `SupplementarySource` object into a blockquote, applying the same media rendering rule to its notes.
 
     **Step 3: Add Sources Block**
