@@ -148,7 +148,7 @@ class MilvusUtil:
         page_metadata_map = {}  # Store metadata of the first chunk per page_id
 
         for doc in raw_results:
-            page_id = doc.pop("page_id")
+            page_id = doc.get("page_id")
             chunk_id = doc.pop("chunk_id")
             text_content = doc.pop("text_content")
 
@@ -192,7 +192,7 @@ class MilvusUtil:
             rerank_response = co.rerank(
                 model="cohere.rerank-v3-5:0",
                 query=query,
-                documents=documents,  
+                documents=documents,
                 top_n=min(top_n, len(documents)),
             )
 
@@ -203,10 +203,16 @@ class MilvusUtil:
                     if not self.is_benchmark:
                         if result.relevance_score < self.threshold:
                             if log_near_threshold_rejections:
-                                logger.debug(f"The near threshold rejections is: {result.relevance_score} - {re.sub(r'\s+',' ', search_results[result.index].page_content)}")
+                                logger.debug(f"The near threshold rejections is: {result.relevance_score} - {search_results[result.index].metadata.get('page_id')}")
                                 
                                 from api.pg_dbutil import PGDBUtil
-                                PGDBUtil().save_low_relevance_result(query, result.index, result.relevance_score, re.sub(r'\s+',' ', search_results[result.index].page_content))
+                                PGDBUtil().save_low_relevance_result(
+                                    query,
+                                    result.index,
+                                    result.relevance_score,
+                                    re.sub(r'\s+',' ', search_results[result.index].page_content),
+                                    search_results[result.index].metadata.get('page_id')
+                                )
                                 
                                 log_near_threshold_rejections = False
 

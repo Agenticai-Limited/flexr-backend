@@ -184,6 +184,7 @@ class PGDBUtil:
                         original_index INTEGER NOT NULL,
                         relevance_score FLOAT NOT NULL,
                         content TEXT,
+                        page_id TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                     """
@@ -198,6 +199,7 @@ class PGDBUtil:
         origin_index: int,
         relevance_score: float,
         content: str,
+        page_id: str = None,
     ) -> bool:
         """Save low relevance result after rerank to PostgreSQL database"""
         try:
@@ -207,10 +209,10 @@ class PGDBUtil:
 
                 cursor.execute(
                     """
-                    INSERT INTO low_relevance_results (query, original_index, relevance_score, content)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO low_relevance_results (query, original_index, relevance_score, content, page_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (query, origin_index, relevance_score, content),
+                    (query, origin_index, relevance_score, content, page_id),
                 )
         except Exception as e:
             logger.error(f"Error saving no match query: {e}")

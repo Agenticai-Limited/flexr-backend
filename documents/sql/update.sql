@@ -1,2 +1,2 @@
-ALTER TABLE no_result_logs
-DROP COLUMN IF EXISTS username;
+-- Add page_id field to low_relevance_results table
+ALTER TABLE low_relevance_results ADD COLUMN IF NOT EXISTS page_id TEXT;
