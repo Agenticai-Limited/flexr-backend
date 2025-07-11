@@ -8,8 +8,7 @@ class TaskManager:
         self.tasks: Dict[str, queue.Queue] = {}
         self._lock = threading.Lock()
 
-    def create_task(self) -> str:
-        task_id = str(uuid.uuid4())
+    def create_task(self, task_id:str) -> str:
         with self._lock:
             self.tasks[task_id] = queue.Queue()
         return task_id

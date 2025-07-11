@@ -4,7 +4,7 @@ import json
 import asyncio
 import queue
 
-from src.flexr.crew import Flexr
+from src.flexr.main import run_with_input
 from fastapi import HTTPException
 from pydantic import BaseModel
 from .models import Token, TokenData
@@ -17,6 +17,7 @@ from .task_manager import task_manager
 from crewai.tasks.task_output import TaskOutput
 from .event_models import ProgressEvent
 from datetime import timedelta
+from src.flexr.main import run_with_input # Import the synchronous run_with_input
 
 router = APIRouter(prefix="/api", tags=["AI Crews"])
 
@@ -25,6 +26,8 @@ class CrewInput(BaseModel):
     Input model for crew operations
     """
     query: str | None = None
+    task_id: Optional[str] = None
+    refined: bool = False
 
 class FeedbackRequest(BaseModel):
     """
@@ -52,7 +55,7 @@ class ErrorResponse(BaseModel):
     status: str = "error"
     message: str
 
-def crew_runner(task_id: str, inputs: dict):
+def crew_runner(task_id: str, input: dict):
     """Function to run the crew and handle callbacks."""
     # Create and set a new event loop for this background thread
     loop = asyncio.new_event_loop()
@@ -71,21 +74,28 @@ def crew_runner(task_id: str, inputs: dict):
         )
         send_event(start_event)
         
-        flexr_crew_instance = Flexr()
-        crew = flexr_crew_instance.crew(task_id=task_id, q=queue, username='test') #TODO use username from request
+        # Call the synchronous run_with_input from main.py
+        final_state = run_with_input(input=input, task_id=task_id, q=queue, username='test') #TODO use username from request
         
-        result = crew.kickoff(inputs)
+        if final_state.refined_query:
         
-        logger.info(f"Crew for task_id {task_id} finished with result: {result}")
+            logger.info(f"Crew for task_id {task_id} finished with result: {final_state.refined_query}")
 
-        PGDBUtil.save_qa_log(task_id, inputs['query'], result.raw)
-        
-        end_event = ProgressEvent(
-            type="status_update",
-            stage="end",
-            status="completed",
-            message=result.raw
-        )
+            # PGDBUtil.save_qa_log(task_id, input['query'], result_raw)
+            
+            end_event = ProgressEvent(
+                type="status_update",
+                stage="refined",
+                status="completed",
+                message={"task_id": task_id, "query": final_state.refined_query, "refined": True,}
+            )
+        elif final_state.qa_crew_response:
+            end_event = ProgressEvent(
+                type="status_update",
+                stage="end",
+                status="completed",
+                message={"response": final_state.qa_crew_response.raw}
+            )
         send_event(end_event)
 
     except Exception as e:
@@ -115,7 +125,9 @@ async def handle_qa(input_data: CrewInput, background_tasks: BackgroundTasks, cu
     - **input_data**: Input data containing questions
     Returns: A task ID for polling the status.
     """
-    task_id = task_manager.create_task()
+    import uuid
+    task_id = input_data.task_id if input_data.task_id else str(uuid.uuid4())
+    task_id = task_manager.create_task(task_id)
     background_tasks.add_task(crew_runner, task_id, input_data.model_dump())
     return TaskCreationResponse(message_id=task_id)
 

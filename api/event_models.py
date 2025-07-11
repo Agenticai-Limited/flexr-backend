@@ -4,9 +4,9 @@ import json
 
 class ProgressEvent(BaseModel):
     type: Literal["status_update", "error"]
-    stage: Literal["start", "running", "end"]
+    stage: Literal["start", "running", "end","refined"]
     status: str
-    message: Optional[str] = None
+    message: Optional[dict] = None
 
     def to_sse_format(self) -> str:
         """Converts the event to a Server-Sent Event formatted string."""

@@ -64,7 +64,7 @@ class MilvusUtil:
 
         return self.vectorStore.add_documents(documents)
 
-    def search(self, query: str, top_k: int = 25) -> RerankedResults:
+    def search_and_rerank(self, query: str, top_k: int = 25) -> RerankedResults:
         logger.debug(
             f"{'=' *30 } Query: {query} | Embedding Model: {os.environ["EMBEDDING_MODEL"]} {'='*30}"
         )
@@ -192,3 +192,23 @@ class MilvusUtil:
             logger.error(f"Error in rerank: {e}")
             traceback.print_exc()
             return []
+        
+    def search_and_classify_results(self, query: str, top_k: int = 25, high_threshold: float = 0.6, medium_threshold: float = 0.4):
+        results = self.vectorStore.similarity_search_with_score(query, top_k)
+        classified_results = {"high_related": [], "medium_related": [], "low_related": []}
+        for hit, score in results:
+            logger.info(f"Samiliary score: {score}; Content: {re.sub(r'\s+', ' ', hit.page_content)}")
+
+            if score >= high_threshold:
+                classified_results["high_related"].append(hit)
+            elif score >= medium_threshold:
+                classified_results["medium_related"].append(hit)
+            else:
+                classified_results["low_related"].append(hit)
+
+        return classified_results
+    
+    def search(self, query: str, top_k: int = 25) -> List[LangchainDocument]:
+        results = self.vectorStore.similarity_search_with_score(query, k=top_k)
+        return results
+

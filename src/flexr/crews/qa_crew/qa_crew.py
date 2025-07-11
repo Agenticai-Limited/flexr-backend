@@ -30,12 +30,13 @@ import os
 
 
 @CrewBase
-class Flexr():
-    """Flexr crew"""
+class QACrew():
+    """QA Crew"""
 
     @before_kickoff
     def before_kickoff(self,input: dict):
         self.input = input
+        # input['query'] = self.assess_and_refine_query_task()
         event = ProgressEvent(
             type="status_update",
             stage="running",
@@ -66,7 +67,7 @@ class Flexr():
 
     @task
     def retrieval_task(self) -> Task:
-        search_tool = self.search_knowledgebase
+        search_tool = self.search_knowledgebase_and_rerank
         search_tool.result_as_answer = True
         
         return Task(
@@ -85,7 +86,7 @@ class Flexr():
         )
 
     @tool
-    def search_knowledgebase(query: str) -> str :
+    def search_knowledgebase_and_rerank(query: str) -> str :
         '''
         Search the query, retrieving the most relevant text excerpts or document references from the knowledge base
         Args:
@@ -109,7 +110,7 @@ class Flexr():
                ]
              }
         '''
-        search_results:RerankedResults = MilvusUtil().search(query)
+        search_results:RerankedResults = MilvusUtil().search_and_rerank(query)
         return search_results.model_dump_json()
     
     def update_task_progress(self, event: ProgressEvent):

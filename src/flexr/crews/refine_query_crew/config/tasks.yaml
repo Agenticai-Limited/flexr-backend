@@ -1,0 +1,33 @@
+retrieve_information:
+  description: |
+    "Based on the following original user query:
+    '{query}'
+    Retrieve all relevant content from the internal knowledge base (VectorDB).
+    Your focus is on finding information segments that directly answer the query, provide query context,
+    or are closely related to the query topic. If the retrieved information is limited or of low quality,
+    please truthfully summarize it and point out its shortcomings."
+  expected_output: |
+    "A detailed summary of knowledge base content relevant to the original query. If the content is insufficient, please also indicate that."
+  agent: "information_retriever" # Executed by the information_retriever Agent
+
+# Task 2: Query Optimization
+optimize_query:
+  description: |
+    "Your task is to optimize the query's phrasing by combining the original user query and the previously retrieved content.
+    Original Query: '{query}'
+    Retrieved Content: '{initial_retrieval_task.output}'
+
+    Please analyze the matching degree between the retrieved content and the original query.
+    - If the retrieved content is highly relevant to the original query and effectively answers the question,
+      attempt to transform the original query into a more specific, precise phrasing that directly points to effective information.
+    - If the retrieved content's matching degree with the original query is not ideal, or if there is missing information,
+      based on the existing retrieval results and the original query's intent,
+      propose 1 to 3 new query statements that are more guiding, precise, or comprehensively cover the original intent.
+    - Your ultimate goal is to generate a new query or list of queries that maximizes the retrieval quality in the subsequent RAG system."
+  expected_output: |
+    "One or more optimized query statements. If multiple are provided, please present them in a clear numbered or list format.
+    For example:
+    1. Optimized Query A
+    2. Optimized Query B
+    ..."
+  agent: "query_optimizer" # Executed by the query_optimizer Agent
