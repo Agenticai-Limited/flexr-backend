@@ -1,6 +1,5 @@
 import os
 import bcrypt
-import configparser
 from loguru import logger
 from typing import Dict
 from fastapi import HTTPException
@@ -26,17 +25,11 @@ class PGDBUtil:
         """Initialize the connection pool"""
         if cls._pool is None:
             try:
-                parser = configparser.ConfigParser()
-                parser.read("db_config.ini")
+                database_url = os.environ["DATABASE_URL"]
+                if not database_url:
+                    raise Exception("DATABASE_URL not found in environment variables")
 
-                if parser.has_section("postgresql"):
-                    db_params = dict(parser.items("postgresql"))
-                    # Convert port to integer
-                    db_params["port"] = int(db_params["port"])
-                else:
-                    raise Exception("postgresql not found in the app/db_config.ini")
-
-                cls._pool = SimpleConnectionPool(1, 20, **db_params)
+                cls._pool = SimpleConnectionPool(1, 20, dsn=database_url)
                 logger.info("PostgreSQL connection pool initialized successfully")
             except Exception as e:
                 logger.error(f"Error initializing PostgreSQL connection pool: {e}")
